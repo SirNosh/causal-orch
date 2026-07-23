@@ -1,0 +1,28 @@
+candidate_order:
+  - openai/gpt-oss-20b:free
+  - nvidia/nemotron-3-super-120b-a12b:free
+  - google/gemma-4-26b-a4b-it:free
+
+sampling:
+  temperature: 0.2
+  top_p: 0.9
+  max_tokens: 4096
+
+selection:
+  policy: first_qualified_in_locked_order
+  based_on_treatment_effect: false
+  selected_model: ""
+
+candidates:
+  - model_slug: openai/gpt-oss-20b:free
+    input_price: "0"
+    output_price: "0"
+    manifest_sha256: ""
+  - model_slug: nvidia/nemotron-3-super-120b-a12b:free
+    input_price: "0"
+    output_price: "0"
+    manifest_sha256: ""
+  - model_slug: google/gemma-4-26b-a4b-it:free
+    input_price: "0"
+    output_price: "0"
+    manifest_sha256: ""

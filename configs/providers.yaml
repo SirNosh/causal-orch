@@ -1,0 +1,6 @@
+provider_api: openrouter
+catalog_endpoint: https://openrouter.ai/api/v1/models
+pinned_provider: ""
+allow_fallbacks: false
+require_parameters: true
+provider_manifest_sha256: ""

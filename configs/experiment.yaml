@@ -1,0 +1,17 @@
+protocol:
+  name: causal_delegation_paper_1
+  are_commit: 7946367413129784139e785ae4c351090002a0bb
+  gaia2_revision: ""
+  scenario_ids: []
+  fixed_generation_seconds: 5
+  provider_fallbacks: false
+
+models_file: models.yaml
+providers_file: providers.yaml
+randomization_file: randomization.yaml
+gaia2_manifest_file: gaia2_manifest.json
+
+manifests:
+  gaia2_sha256: ""
+  model_sha256: {}
+  provider_sha256: ""
