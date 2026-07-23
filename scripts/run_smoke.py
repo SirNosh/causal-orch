@@ -1,11 +1,27 @@
-"""Dependency-injected smoke-plan contract with no live scenario assumptions."""
+"""Configured ARE/Gaia2 smoke contract; no live work occurs on import."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import argparse
+from dataclasses import dataclass
+import importlib
 import json
+import os
+from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+
+
+LOCKED_ARE_COMMIT = "7946367413129784139e785ae4c351090002a0bb"
+REQUIRED_SMOKE_CHECKS = (
+    "pinned_are",
+    "configured_gaia2",
+    "configured_provider",
+    "configured_scenario",
+    "direct_action",
+    "forced_mock_delegation",
+    "native_validation",
+    "trace_completeness",
+)
 
 
 @dataclass(frozen=True)
@@ -19,6 +35,19 @@ class SmokePlan:
     context: Mapping[str, Any]
 
 
+@dataclass(frozen=True)
+class SmokeExecution:
+    direct_action_result: Any
+    forced_mock_delegation_result: Any
+    validation_result: Any
+    native_success: bool
+    trace_event_names: tuple[str, ...]
+
+
+class SmokePrerequisiteError(ValueError):
+    """The configured smoke run cannot prove the locked prerequisites."""
+
+
 SmokeRunner = Callable[[SmokeStep], Any]
 
 
@@ -27,7 +56,7 @@ def build_smoke_plan(
     *,
     context: Mapping[str, Any] | None = None,
 ) -> SmokePlan:
-    """Construct labels and caller-owned context; it creates no ARE/Gaia2 objects."""
+    """Construct labels and caller-owned context without creating ARE objects."""
 
     if any(not isinstance(check, str) or not check for check in checks):
         raise ValueError("smoke check names must be non-empty strings")
@@ -44,18 +73,153 @@ def run_smoke(plan: SmokePlan, runner: SmokeRunner) -> dict[str, Any]:
     if not callable(runner):
         raise TypeError("runner must be callable")
     results = [{"check": step.name, "result": runner(step)} for step in plan.steps]
-    return {
-        "checks": results,
-        "passed": all(bool(item["result"]) for item in results),
-    }
+    return {"checks": results, "passed": all(bool(item["result"]) for item in results)}
+
+
+def _nonempty(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def smoke_prerequisite_errors(
+    *,
+    experiment: Mapping[str, Any],
+    gaia2_manifest: Mapping[str, Any],
+    providers: Mapping[str, Any],
+    scenario_factory_spec: str | None,
+    are_revision: str | None,
+) -> tuple[str, ...]:
+    """Return all missing/placeholder prerequisites without importing a scenario."""
+
+    errors: list[str] = []
+    protocol = experiment.get("protocol", {})
+    if protocol.get("are_commit") != LOCKED_ARE_COMMIT:
+        errors.append("ARE_COMMIT_MISMATCH")
+    if are_revision != LOCKED_ARE_COMMIT:
+        errors.append("ARE_REVISION_UNVERIFIED_OR_MISMATCH")
+    if not _nonempty(gaia2_manifest.get("gaia2_revision")):
+        errors.append("GAIA2_REVISION_PLACEHOLDER")
+    scenario_ids = gaia2_manifest.get("scenario_ids")
+    if not isinstance(scenario_ids, list) or not scenario_ids or any(not _nonempty(value) for value in scenario_ids):
+        errors.append("SCENARIO_IDS_PLACEHOLDER")
+    for key, error in (("manifest_sha256", "GAIA2_MANIFEST_HASH_PLACEHOLDER"), ("dataset_sha256", "GAIA2_DATASET_HASH_PLACEHOLDER")):
+        if not _nonempty(gaia2_manifest.get(key)):
+            errors.append(error)
+    if not _nonempty(providers.get("pinned_provider")):
+        errors.append("PINNED_PROVIDER_PLACEHOLDER")
+    if not _nonempty(providers.get("provider_manifest_sha256")):
+        errors.append("PROVIDER_MANIFEST_HASH_PLACEHOLDER")
+    if not _nonempty(scenario_factory_spec):
+        errors.append("SCENARIO_FACTORY_REQUIRED")
+    return tuple(errors)
+
+
+def require_smoke_prerequisites(**kwargs: Any) -> None:
+    errors = smoke_prerequisite_errors(**kwargs)
+    if errors:
+        raise SmokePrerequisiteError("; ".join(errors))
+
+
+def load_configurations(config_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Load the three smoke configuration documents only when explicitly requested."""
+
+    config_dir = Path(config_dir)
+    try:
+        import yaml
+    except ImportError as exc:  # pragma: no cover - dependency failure is CLI-only.
+        raise SmokePrerequisiteError("PyYAML is required to load smoke configuration") from exc
+    experiment = yaml.safe_load((config_dir / "experiment.yaml").read_text(encoding="utf-8"))
+    providers = yaml.safe_load((config_dir / "providers.yaml").read_text(encoding="utf-8"))
+    gaia2_manifest = json.loads((config_dir / "gaia2_manifest.json").read_text(encoding="utf-8"))
+    if not all(isinstance(value, dict) for value in (experiment, providers, gaia2_manifest)):
+        raise SmokePrerequisiteError("smoke configuration documents must contain mappings")
+    return experiment, gaia2_manifest, providers
+
+
+def load_symbol(spec: str) -> Any:
+    """Load ``module:attribute`` on demand; importing this script remains safe."""
+
+    if not _nonempty(spec) or ":" not in spec:
+        raise SmokePrerequisiteError("scenario factory must use module:attribute syntax")
+    module_name, attribute = spec.split(":", 1)
+    if not module_name or not attribute:
+        raise SmokePrerequisiteError("scenario factory must use module:attribute syntax")
+    value = getattr(importlib.import_module(module_name), attribute, None)
+    if not callable(value):
+        raise SmokePrerequisiteError(f"configured symbol is not callable: {spec}")
+    return value
+
+
+def _contract_callable(target: Any, name: str) -> Callable[[], Any]:
+    value = target.get(name) if isinstance(target, Mapping) else getattr(target, name, None)
+    if not callable(value):
+        raise SmokePrerequisiteError(f"scenario factory result lacks callable {name}()")
+    return value
+
+
+def _event_name(event: Any) -> str:
+    value = event.get("event_type") if isinstance(event, Mapping) else getattr(event, "event_type", event)
+    return getattr(value, "value", value) if isinstance(getattr(value, "value", value), str) else str(value)
+
+
+def check_trace_completeness(events: Sequence[Any]) -> tuple[str, ...]:
+    names = tuple(_event_name(event) for event in events)
+    if not names:
+        raise SmokePrerequisiteError("TRACE_EMPTY")
+    if "RUN_STARTED" not in names or "RUN_COMPLETED" not in names:
+        raise SmokePrerequisiteError("TRACE_RUN_BOUNDARIES_MISSING")
+    if "DIRECT_ACTION" not in names:
+        raise SmokePrerequisiteError("TRACE_DIRECT_ACTION_MISSING")
+    if not ({"FORCED_MOCK_DELEGATION", "DELEGATION_EXECUTED", "DELEGATION_SUPPRESSED"} & set(names)):
+        raise SmokePrerequisiteError("TRACE_FORCED_DELEGATION_MISSING")
+    if names.index("RUN_STARTED") > names.index("RUN_COMPLETED"):
+        raise SmokePrerequisiteError("TRACE_ORDER_INVALID")
+    return names
+
+
+def _native_success(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, Mapping):
+        value = value.get("success")
+    else:
+        value = getattr(value, "success", None)
+    if not isinstance(value, bool):
+        raise SmokePrerequisiteError("NATIVE_VALIDATION_SUCCESS_UNAVAILABLE")
+    return value
+
+
+def run_configured_smoke(scenario_factory: Callable[[], Any]) -> SmokeExecution:
+    """Execute the injected direct/delegation/native-validation smoke contract."""
+
+    harness = scenario_factory()
+    direct = _contract_callable(harness, "direct_action")()
+    delegated = _contract_callable(harness, "forced_mock_delegation")()
+    validation = _contract_callable(harness, "native_validation")()
+    events = _contract_callable(harness, "trace_events")()
+    return SmokeExecution(direct, delegated, validation, _native_success(validation), check_trace_completeness(events))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("checks", nargs="*", default=[])
+    root = Path(__file__).resolve().parents[1]
+    parser.add_argument("--config-dir", default=str(root / "configs"))
+    parser.add_argument("--scenario-factory", required=True)
+    parser.add_argument("--are-revision", default=os.environ.get("ARE_COMMIT"))
     args = parser.parse_args(argv)
-    plan = build_smoke_plan(args.checks)
-    print(json.dumps({"checks": [step.name for step in plan.steps], "context": plan.context}))
+    try:
+        experiment, gaia2_manifest, providers = load_configurations(args.config_dir)
+        require_smoke_prerequisites(
+            experiment=experiment,
+            gaia2_manifest=gaia2_manifest,
+            providers=providers,
+            scenario_factory_spec=args.scenario_factory,
+            are_revision=args.are_revision,
+        )
+        execution = run_configured_smoke(load_symbol(args.scenario_factory))
+    except (OSError, SmokePrerequisiteError, TypeError, ValueError) as exc:
+        print(json.dumps({"passed": False, "error": str(exc)}, sort_keys=True))
+        return 1
+    print(json.dumps({"passed": True, "trace_event_names": execution.trace_event_names}, sort_keys=True))
     return 0
 
 

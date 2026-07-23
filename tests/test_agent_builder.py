@@ -5,6 +5,7 @@ from are.simulation.agents.default_agent.tools.action_executor import ParsedActi
 from are.simulation.tool_utils import AppTool
 
 from causal_orch.agent.orchestrator import CausalOrchestrator
+from causal_orch.agent.worker import DelegationWorkerAdapter
 from causal_orch.models.manifests import MODEL_CANDIDATE_ORDER, ModelManifest, OpenRouterConfig
 from causal_orch.runner.agent_builder import CausalAgentBuilder
 from causal_orch.runner.config_builder import CausalAgentConfigBuilder, ExperimentConfig
@@ -91,6 +92,33 @@ class FakeScenario:
 
 
 class BuilderTests(unittest.TestCase):
+    def test_orchestrator_refreshes_dynamic_delegation_instructions(self):
+        current = {"available_context_refs": (), "allowed_worker_tools": ()}
+        gate = type(
+            "Gate",
+            (),
+            {"handle_proposal": lambda self, _proposal: {"status": "ok"}},
+        )()
+        executor = __import__(
+            "causal_orch.agent.action_executor", fromlist=["InterventionActionExecutor"]
+        ).InterventionActionExecutor(
+            intervention_gate=gate, trace_sink=InMemoryTraceSink()
+        )
+        orchestrator = CausalOrchestrator(
+            llm_engine=lambda *_args, **_kwargs: "",
+            action_executor=executor,
+            eligibility_context_provider=lambda: current,
+        )
+        current.update(
+            {
+                "available_context_refs": ("task", "record"),
+                "allowed_worker_tools": ("FileSystem__read_file",),
+            }
+        )
+        prompt = orchestrator.refresh_delegation_prompt()
+        self.assertIn('"task"', prompt)
+        self.assertIn('"FileSystem__read_file"', prompt)
+
     def test_orchestrator_exposes_delegate_without_an_application_tool(self):
         experiment = make_experiment()
         gate = type(
@@ -148,6 +176,9 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(len(engine_calls), 1)
         self.assertIs(engine_calls[0]["config"], experiment.model_config)
         self.assertEqual(gate_calls[0]["block_key"], "block")
+        self.assertIsInstance(gate_calls[0]["worker_callback"], DelegationWorkerAdapter)
+        self.assertIsNot(gate_calls[0]["worker_callback"], experiment.worker_callback)
+        self.assertTrue(callable(gate_calls[0]["eligibility_context_provider"]))
         self.assertIs(built.pause_env.__self__, env)
         self.assertIs(built.resume_env.__self__, env)
         self.assertEqual(built.react_agent.tools, {})
@@ -165,6 +196,21 @@ class BuilderTests(unittest.TestCase):
         built.react_agent.init_tools()
         self.assertIn("FakeApp__read", built.react_agent.action_executor.tools)
         self.assertNotIn("DELEGATE", built.react_agent.action_executor.tools)
+
+        env.available_context_refs = {"task"}
+        built.react_agent.tools = {
+            "FileSystem__read_file": {
+                "public_name": "FileSystem__read_file",
+                "app_name": "FileSystem",
+                "function_name": "read_file",
+                "write_operation": False,
+                "description": "Read a file.",
+                "argument_schema": {},
+            }
+        }
+        dynamic = gate_calls[0]["eligibility_context_provider"]()
+        self.assertEqual(dynamic["available_context_refs"], ("task",))
+        self.assertEqual(dynamic["allowed_worker_tools"], ("FileSystem__read_file",))
 
     def test_config_rejects_manifest_provider_mismatch(self):
         with self.assertRaises(ValueError):

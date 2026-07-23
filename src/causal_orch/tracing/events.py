@@ -29,6 +29,8 @@ class EventName(str, Enum):
     ORCHESTRATOR_RESUMED = "ORCHESTRATOR_RESUMED"
     PROVIDER_RATE_LIMIT = "PROVIDER_RATE_LIMIT"
     PROVIDER_OUTAGE = "PROVIDER_OUTAGE"
+    PROVIDER_IDENTITY_MISMATCH = "PROVIDER_IDENTITY_MISMATCH"
+    PROVIDER_IDENTITY_UNVERIFIABLE = "PROVIDER_IDENTITY_UNVERIFIABLE"
     MODEL_IDENTITY_MISMATCH = "MODEL_IDENTITY_MISMATCH"
     JUDGE_RESULT = "JUDGE_RESULT"
     RUN_FAILED = "RUN_FAILED"
@@ -70,11 +72,16 @@ class OrchestrationEvent:
     run_id: str | None = None
     attempt_id: str | None = None
     event_id: str = field(default_factory=lambda: uuid4().hex)
+    event_sequence: int | None = None
+    correlation_id: str | None = None
     causal_parent_ids: tuple[str, ...] = field(default_factory=tuple)
     actor_id: str | None = None
     actor_role: str | None = None
     simulated_timestamp: int | float | str | None = None
     wall_timestamp: int | float | str | None = None
+    temporal_batch: str | int | None = None
+    randomization_block_key: str | None = None
+    block_metadata: Mapping[str, Any] = field(default_factory=dict)
     requested_model_slug: str | None = None
     returned_model_slug: str | None = None
     provider_slug: str | None = None
@@ -115,7 +122,18 @@ class OrchestrationEvent:
             object.__setattr__(self, field_name, tuple(values))
         if self.assignment_probability is not None and not 0 <= self.assignment_probability <= 1:
             raise ValueError("assignment_probability must be between zero and one")
+        if self.event_sequence is not None and (type(self.event_sequence) is not int or self.event_sequence < 1):
+            raise ValueError("event_sequence must be a positive integer when supplied")
         object.__setattr__(self, "payload", _json_safe(deepcopy(dict(self.payload))))
+        object.__setattr__(self, "block_metadata", _json_safe(deepcopy(dict(self.block_metadata))))
+
+    @property
+    def sequence(self) -> int | None:
+        return self.event_sequence
+
+    @property
+    def block_key(self) -> str | None:
+        return self.randomization_block_key
 
     @property
     def event_name(self) -> EventName:
@@ -132,11 +150,16 @@ class OrchestrationEvent:
             "run_id": self.run_id,
             "attempt_id": self.attempt_id,
             "event_id": self.event_id,
+            "event_sequence": self.event_sequence,
+            "correlation_id": self.correlation_id,
             "causal_parent_ids": list(self.causal_parent_ids),
             "actor_id": self.actor_id,
             "actor_role": self.actor_role,
             "simulated_timestamp": self.simulated_timestamp,
             "wall_timestamp": self.wall_timestamp,
+            "temporal_batch": self.temporal_batch,
+            "randomization_block_key": self.randomization_block_key,
+            "block_metadata": deepcopy(dict(self.block_metadata)),
             "requested_model_slug": self.requested_model_slug,
             "returned_model_slug": self.returned_model_slug,
             "provider_slug": self.provider_slug,

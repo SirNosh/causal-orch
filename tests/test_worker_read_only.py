@@ -1,9 +1,16 @@
 import hashlib
+import json
 import unittest
 from types import SimpleNamespace
 
 from causal_orch.agent.schemas import EvidenceReport
-from causal_orch.agent.worker import FreshReadOnlyWorker, TreatmentFailureReason
+from causal_orch.agent.worker import (
+    BaseAgentWorkerFactory,
+    DelegationWorkerAdapter,
+    FreshReadOnlyWorker,
+    ReturnArtifactTool,
+    TreatmentFailureReason,
+)
 from causal_orch.runtime.budgets import (
     BudgetExceededError,
     BudgetUsage,
@@ -15,6 +22,9 @@ from causal_orch.runtime.read_only_tools import (
     select_read_only_tools,
 )
 from causal_orch.runtime.state_guard import StateGuard, canonical_hash, canonical_json
+from causal_orch.tracing.events import EventName
+from causal_orch.tracing.sink import InMemoryTraceSink
+from are.simulation.types import SimulatedGenerationTimeConfig
 
 
 def safe_tool(name="safe_read", **overrides):
@@ -45,6 +55,174 @@ def artifact(objective="Find the record."):
 
 
 class WorkerReadOnlyTests(unittest.TestCase):
+    def test_delegation_adapter_is_json_safe_and_fake_worker_executes_read_tool(self):
+        calls = []
+
+        class ReadTool:
+            public_name = "FileSystem__read_file"
+            app_name = "FileSystem"
+            function_name = "read_file"
+            write_operation = False
+            description = "Read a file."
+            argument_schema = {"type": "object"}
+
+            def __call__(self):
+                calls.append("read")
+                return "record-42"
+
+        proposal = {
+            "objective": "Find the record.",
+            "reason_code": "INFORMATION_GAP",
+            "context_refs": ["task"],
+            "allowed_read_tools": ["FileSystem__read_file"],
+            "completion_criterion": "Name the record and cite the selected context.",
+            "max_worker_steps": 2,
+            "max_worker_output_tokens": 20,
+        }
+
+        def fake_worker(payload, tools):
+            self.assertEqual(payload["context"], {"task": {"case": "42"}})
+            self.assertIn("completion criterion", payload["prompt"].lower())
+            self.assertNotIn("ReadTool", repr(payload))
+            self.assertEqual(tools[0](), "record-42")
+            return artifact("Find the record.")
+
+        result = DelegationWorkerAdapter(
+            environment={"apps": {}},
+            available_tools=lambda: [ReadTool()],
+            context_resolver=lambda ref: {"case": "42"},
+            worker_runner=fake_worker,
+        )(proposal)
+
+        self.assertEqual(result["status"], "WORKER_COMPLETED")
+        self.assertEqual(result["artifact"]["objective"], "Find the record.")
+        self.assertEqual(calls, ["read"])
+        self.assertTrue(json.dumps(result))
+        self.assertIsInstance(result["payload"]["proposal_id"], str)
+
+    def test_return_artifact_tool_validates_and_base_agent_factory_is_available(self):
+        returned = []
+        tool = ReturnArtifactTool(returned.append)
+        validated = tool(artifact())
+        self.assertEqual(validated["artifact_type"], "EVIDENCE_REPORT")
+        self.assertEqual(returned[0].objective, "Find the record.")
+
+        factory = BaseAgentWorkerFactory(lambda *_args, **_kwargs: "unused")
+        agent = factory(
+            {
+                "objective": "Find the record.",
+                "completion_criterion": "cite it",
+                "context": {},
+                "permitted_tools": [],
+                "evidence_refs": [],
+                "budgets": {"max_steps": 1, "max_output_tokens": 1},
+                "prompt": "worker prompt",
+            },
+            (),
+        )
+        self.assertEqual(agent.action_executor.tools["return_artifact"].name, "return_artifact")
+
+    def test_default_base_agent_worker_emits_events_invokes_read_tool_and_pauses_per_generation(self):
+        calls = []
+        pause_calls = []
+        resume_calls = []
+        sink = InMemoryTraceSink()
+
+        class ReadTool:
+            public_name = "FileSystem__read_file"
+            app_name = "FileSystem"
+            function_name = "read_file"
+            write_operation = False
+            description = "Read a file."
+            argument_schema = {"type": "object"}
+
+            def __call__(self):
+                calls.append("read")
+                return "record-42"
+
+        outputs = iter(
+            [
+                (
+                    'Thought: inspect\nAction: {"action":"FileSystem__read_file","action_input":{}}',
+                    {"completion_tokens": 2},
+                ),
+                (
+                    "Thought: report\nAction: "
+                    + json.dumps({"action": "return_artifact", "action_input": {"artifact": artifact()}}),
+                    {"completion_tokens": 3},
+                ),
+            ]
+        )
+
+        def engine(*_args, **_kwargs):
+            return next(outputs)
+
+        proposal = {
+            "objective": "Find the record.",
+            "reason_code": "INFORMATION_GAP",
+            "context_refs": ["task"],
+            "allowed_read_tools": ["FileSystem__read_file"],
+            "completion_criterion": "Name the record.",
+            "max_worker_steps": 3,
+            "max_worker_output_tokens": 20,
+        }
+        result = DelegationWorkerAdapter(
+            environment={"apps": {}},
+            available_tools=lambda: [ReadTool()],
+            context_resolver={"task": {"case": "42"}},
+            llm_engine=engine,
+            trace_sink=sink,
+            pause_env=lambda: pause_calls.append("pause"),
+            resume_env=lambda offset: resume_calls.append(offset),
+            simulated_generation_time_config=SimulatedGenerationTimeConfig(mode="fixed", seconds=5.0),
+        )(proposal)
+
+        self.assertEqual(result["status"], "WORKER_COMPLETED")
+        self.assertEqual(calls, ["read"])
+        self.assertEqual(len(pause_calls), 2)
+        self.assertEqual(resume_calls, [5.0, 0.0, 5.0, 0.0])
+        event_names = [event.event_type for event in sink.events]
+        self.assertEqual(
+            event_names,
+            [
+                EventName.WORKER_STARTED,
+                EventName.WORKER_TOOL_CALL,
+                EventName.WORKER_TOOL_RESULT,
+                EventName.WORKER_STATE_GUARD,
+                EventName.WORKER_ARTIFACT,
+                EventName.ORCHESTRATOR_RESUMED,
+            ],
+        )
+        self.assertTrue(all(event.causal_parent_ids for event in sink.events[1:]))
+
+    def test_default_base_agent_worker_budget_exhaustion_is_not_malformed(self):
+        proposal = {
+            "objective": "Find the record.",
+            "reason_code": "INFORMATION_GAP",
+            "context_refs": [],
+            "allowed_read_tools": [],
+            "completion_criterion": "Name the record.",
+            "max_worker_steps": 1,
+            "max_worker_output_tokens": 2,
+        }
+
+        def over_budget_engine(*_args, **_kwargs):
+            return (
+                'Thought: too large\nAction: {"action":"return_artifact","action_input":{}}',
+                {"completion_tokens": 3},
+            )
+
+        result = DelegationWorkerAdapter(
+            environment={"apps": {}},
+            available_tools=[],
+            context_resolver={},
+            llm_engine=over_budget_engine,
+        )(proposal)
+        self.assertEqual(
+            result["failure"]["reason"],
+            TreatmentFailureReason.TIMEOUT_OR_BUDGET_EXHAUSTION.value,
+        )
+
     def test_unknown_none_and_write_tools_are_rejected(self):
         tools = [
             safe_tool(),

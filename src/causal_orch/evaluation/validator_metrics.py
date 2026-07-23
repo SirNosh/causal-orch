@@ -6,6 +6,43 @@ from dataclasses import dataclass, replace
 from typing import Any, Iterable
 
 
+_MISSING = object()
+
+
+def _optional_count(value: Any) -> int | None:
+    """Return a supplied count without turning an absent field into zero."""
+
+    if value is _MISSING or value is None:
+        return None
+    if type(value) is int:
+        if value < 0:
+            raise ValueError("validator counts must be non-negative")
+        return value
+    try:
+        count = len(value)
+    except TypeError:
+        return None
+    if count < 0:  # pragma: no cover - Python containers cannot do this.
+        raise ValueError("validator counts must be non-negative")
+    return count
+
+
+def _validator_count(validator: Any, *names: str) -> int | None:
+    for name in names:
+        value = getattr(validator, name, _MISSING)
+        if value is not _MISSING:
+            return _optional_count(value)
+    return None
+
+
+def _validator_text(validator: Any, *names: str) -> str | None:
+    for name in names:
+        value = getattr(validator, name, _MISSING)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
 @dataclass(frozen=True)
 class ValidatorRecord:
     """A supplied validator event/state observation.
@@ -19,10 +56,11 @@ class ValidatorRecord:
     activated: bool
     initial_milestones: int
     achieved_milestones: int
-    minefields: int
-    triggered_minefields: int = 0
+    minefields: int | None = None
+    triggered_minefields: int | None = None
     timeout: int | None = None
     timed_out: bool = False
+    failure_reason: str | None = None
 
     def __post_init__(self) -> None:
         if not self.event_id:
@@ -32,11 +70,13 @@ class ValidatorRecord:
         for name in (
             "initial_milestones",
             "achieved_milestones",
-            "minefields",
-            "triggered_minefields",
         ):
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} must be non-negative")
+        if self.minefields is not None and self.minefields < 0:
+            raise ValueError("minefields must be non-negative or None")
+        if self.triggered_minefields is not None and self.triggered_minefields < 0:
+            raise ValueError("triggered_minefields must be non-negative or None")
 
     @property
     def validator_id(self) -> str:
@@ -53,7 +93,7 @@ class ValidatorRecord:
     ) -> "ValidatorRecord":
         milestones = getattr(validator, "milestones", ())
         achieved = getattr(validator, "achieved_milestones", ())
-        minefields = getattr(validator, "minefields", ())
+        minefields = _validator_count(validator, "minefields", "minefield_count")
         timeout = getattr(validator, "timeout", None)
         internal_count = getattr(validator, "_internal_check_count", 0)
         timed_out = timeout is not None and internal_count >= timeout
@@ -63,22 +103,48 @@ class ValidatorRecord:
             activated=activated,
             initial_milestones=len(milestones) + len(achieved),
             achieved_milestones=len(achieved),
-            minefields=len(minefields),
+            minefields=minefields,
+            triggered_minefields=_validator_count(
+                validator, "triggered_minefields", "triggered_minefield_count"
+            ),
             timeout=timeout,
             timed_out=timed_out,
+            failure_reason=_validator_text(validator, "failure_reason", "failure_message"),
         )
 
     def with_validator_state(self, validator: Any) -> "ValidatorRecord":
         achieved = getattr(validator, "achieved_milestones", ())
-        minefields = getattr(validator, "minefields", ())
+        minefields = _validator_count(validator, "minefields", "minefield_count")
         timeout = getattr(validator, "timeout", self.timeout)
         internal_count = getattr(validator, "_internal_check_count", 0)
+        triggered = _validator_count(
+            validator, "triggered_minefields", "triggered_minefield_count"
+        )
+        failure_reason = _validator_text(validator, "failure_reason", "failure_message")
         return replace(
             self,
             achieved_milestones=len(achieved),
-            minefields=len(minefields),
+            minefields=self.minefields if not hasattr(validator, "minefields") and not hasattr(validator, "minefield_count") else minefields,
+            triggered_minefields=(
+                self.triggered_minefields
+                if not hasattr(validator, "triggered_minefields")
+                and not hasattr(validator, "triggered_minefield_count")
+                else triggered
+            ),
             timeout=timeout,
             timed_out=timeout is not None and internal_count >= timeout,
+            failure_reason=self.failure_reason if failure_reason is None else failure_reason,
+        )
+
+    def with_failure(
+        self, *, triggered_minefields: int | None, failure_reason: str
+    ) -> "ValidatorRecord":
+        """Attach only failure information observed from ARE's validation path."""
+
+        return replace(
+            self,
+            triggered_minefields=triggered_minefields,
+            failure_reason=failure_reason,
         )
 
 
@@ -93,8 +159,8 @@ class ValidatorMetric:
     initial_milestone_count: int = 0
     achieved_milestone_count: int = 0
     completion_fraction: float | None = None
-    minefield_count: int = 0
-    triggered_minefield_count: int = 0
+    minefield_count: int | None = None
+    triggered_minefield_count: int | None = None
     timeout_count: int = 0
     validator_ids: tuple[str, ...] = ()
 
@@ -106,14 +172,32 @@ def aggregate_validator_milestones(records: Iterable[ValidatorRecord]) -> Valida
     activated = tuple(record for record in records if record.activated)
     initial = sum(record.initial_milestones for record in activated)
     achieved = sum(record.achieved_milestones for record in activated)
+    known_triggered = [
+        record.triggered_minefields
+        for record in activated
+        if record.triggered_minefields is not None
+    ]
+    triggered_count: int | None
+    if not activated:
+        triggered_count = 0
+    elif len(known_triggered) != len(activated):
+        triggered_count = None
+    else:
+        triggered_count = sum(known_triggered)
     return ValidatorMetric(
         activated_validator_count=len(activated),
         never_activated_validator_count=sum(not record.activated for record in records),
         initial_milestone_count=initial,
         achieved_milestone_count=achieved,
         completion_fraction=(achieved / initial if initial else None),
-        minefield_count=sum(record.minefields for record in activated),
-        triggered_minefield_count=sum(record.triggered_minefields for record in activated),
+        minefield_count=(
+            0
+            if not activated
+            else None
+            if any(record.minefields is None for record in activated)
+            else sum(record.minefields for record in activated)
+        ),
+        triggered_minefield_count=triggered_count,
         timeout_count=sum(record.timed_out for record in activated),
         validator_ids=tuple(record.validator_id for record in records),
     )

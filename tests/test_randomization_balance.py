@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from causal_orch.agent.schemas import (
@@ -7,7 +9,13 @@ from causal_orch.agent.schemas import (
     RejectionReason,
     validate_proposal,
 )
-from causal_orch.runtime.randomization import TreatmentAssignment, generate_balanced_schedule
+from causal_orch.runtime.randomization import (
+    AssignmentManifest,
+    AssignmentSchedule,
+    TreatmentAssignment,
+    derive_block_key,
+    generate_balanced_schedule,
+)
 
 
 def proposal(objective: str = "Find the relevant record.") -> DelegationProposal:
@@ -24,6 +32,111 @@ def proposal(objective: str = "Find the relevant record.") -> DelegationProposal
 
 
 class RandomizationTests(unittest.TestCase):
+    def test_manifest_round_trip_and_deterministic_block_derivation(self) -> None:
+        manifest = AssignmentManifest.create(
+            run_id="run-1",
+            model="model-1",
+            capability="delegation",
+            scenario_id="scenario-1",
+            temporal_batch=3,
+            seed="seed",
+            block_size=4,
+        )
+        self.assertEqual(
+            manifest.block_key,
+            derive_block_key("model-1", "delegation", "scenario-1", 3),
+        )
+        self.assertEqual(AssignmentManifest.from_json(manifest.serialize()), manifest)
+
+    def test_manifest_schedule_consumes_once_and_records_assignment(self) -> None:
+        manifest = AssignmentManifest.create(
+            run_id="run-1",
+            model_slug="model-1",
+            capability="delegation",
+            scenario_id="scenario-1",
+            temporal_batch="batch-1",
+            seed="seed",
+            block_size=2,
+        )
+        schedule = generate_balanced_schedule(
+            manifest.seed,
+            [manifest.block_key],
+            manifest.block_size,
+            manifest=manifest,
+        )
+        self.assertIsNone(schedule.reveal(manifest.block_key, eligible=False))
+        self.assertEqual(schedule.consumed_count, 0)
+        self.assertIsNotNone(schedule.reveal(manifest.block_key, eligible=True))
+        self.assertEqual(schedule.consumed_count, 1)
+        self.assertEqual(len(schedule.records), 1)
+        self.assertEqual(schedule.records[0].run_id, "run-1")
+        self.assertEqual(schedule.records[0].position, "run-1:0")
+        self.assertEqual(schedule.records[0].manifest_sha256, manifest.manifest_sha256)
+
+    def test_manifest_and_consumed_records_survive_restart(self) -> None:
+        manifest = AssignmentManifest.create(
+            run_id="run-durable",
+            model_slug="model-1",
+            capability="delegation",
+            scenario_id="scenario-1",
+            temporal_batch="batch-1",
+            seed="seed",
+            block_size=4,
+        )
+        with TemporaryDirectory() as directory:
+            directory = Path(directory)
+            manifest_path = directory / "manifest.json"
+            commitment_path = directory / "commitments.json"
+            manifest.persist(manifest_path)
+            self.assertEqual(
+                AssignmentManifest.from_json(manifest_path.read_text(encoding="utf-8")),
+                manifest,
+            )
+
+            first = generate_balanced_schedule(
+                manifest.seed,
+                [manifest.block_key],
+                manifest.block_size,
+                manifest=manifest,
+                commitment_path=commitment_path,
+            )
+            self.assertIsNone(first.reveal(manifest.block_key, eligible=False))
+            first.reveal(manifest.block_key, eligible=True)
+
+            restarted = AssignmentSchedule.from_manifest(
+                manifest, commitment_path=commitment_path
+            )
+            self.assertEqual(restarted.consumed_count, 1)
+            self.assertEqual(len(restarted.records), 1)
+            restarted.reveal(manifest.block_key, eligible=True)
+            self.assertEqual(restarted.consumed_count, 2)
+
+    def test_repeated_runs_in_one_block_have_distinct_run_positions(self) -> None:
+        common = dict(
+            model_slug="model-1",
+            capability="delegation",
+            scenario_id="scenario-1",
+            temporal_batch="batch-1",
+            seed="seed",
+            block_size=2,
+        )
+        first_manifest = AssignmentManifest.create(run_id="run-1", **common)
+        second_manifest = AssignmentManifest.create(run_id="run-2", **common)
+        self.assertEqual(first_manifest.block_key, second_manifest.block_key)
+        with TemporaryDirectory() as directory:
+            first = AssignmentSchedule.from_manifest(
+                first_manifest, commitment_path=Path(directory) / "first.json"
+            )
+            second = AssignmentSchedule.from_manifest(
+                second_manifest, commitment_path=Path(directory) / "second.json"
+            )
+            first.reveal(first_manifest.block_key, eligible=True)
+            second.reveal(second_manifest.block_key, eligible=True)
+
+        self.assertNotEqual(first.records[0].position, second.records[0].position)
+        self.assertEqual(first.records[0].run_id, "run-1")
+        self.assertEqual(second.records[0].run_id, "run-2")
+
     def test_even_blocks_are_balanced(self) -> None:
         schedule = generate_balanced_schedule("committed-seed", ["a"], block_size=20)
         values = [schedule.reveal("a", eligible=True) for _ in range(20)]

@@ -43,6 +43,8 @@ class ObservationalAssociation:
     relative_risk: float | None
     adjusted: bool = False
     covariates: tuple[str, ...] = ()
+    overlap_population_count: int | None = None
+    excluded_nonoverlap_count: int = 0
 
     @property
     def risk_difference(self) -> float:
@@ -90,42 +92,54 @@ def adjusted_proposal_association(
     """Standardize stratum-specific associations using pre-treatment covariates only."""
 
     covariates = tuple(covariates)
-    invalid = [name for name in covariates if name not in PRE_TREATMENT_COVARIATES]
+    invalid = [
+        name
+        for name in covariates
+        if name not in PRE_TREATMENT_COVARIATES
+        or name in POST_TREATMENT_MARKERS
+        or name.startswith("post_treatment")
+    ]
     if invalid:
         raise ValueError(f"adjustment covariates must be prespecified pre-treatment fields: {invalid}")
     rows = list(rows)
-    overall = proposal_association(rows, proposal_key=proposal_key, success_key=success_key)
     strata: dict[tuple[Any, ...], list[Mapping[str, Any]]] = {}
     for row in rows:
         strata.setdefault(tuple(row.get(name) for name in covariates), []).append(row)
-    adjusted_difference = 0.0
-    adjusted_proposal_rate = 0.0
-    adjusted_no_proposal_rate = 0.0
-    total = len(rows)
+    overlap_strata = []
     for stratum in strata.values():
         try:
             proposed, not_proposed = _groups(stratum, proposal_key, success_key)
         except ValueError:
             continue
-        weight = len(stratum) / total
+        overlap_strata.append((stratum, proposed, not_proposed))
+    overlap_total = sum(len(stratum) for stratum, _, _ in overlap_strata)
+    if not overlap_total:
+        raise ValueError("adjustment requires at least one covariate stratum with both groups")
+
+    adjusted_difference = 0.0
+    adjusted_proposal_rate = 0.0
+    adjusted_no_proposal_rate = 0.0
+    for stratum, proposed, not_proposed in overlap_strata:
+        weight = len(stratum) / overlap_total
         proposal_rate = sum(proposed) / len(proposed)
         no_proposal_rate = sum(not_proposed) / len(not_proposed)
         adjusted_difference += weight * (proposal_rate - no_proposal_rate)
         adjusted_proposal_rate += weight * proposal_rate
         adjusted_no_proposal_rate += weight * no_proposal_rate
     return ObservationalAssociation(
-        estimand="adjusted_observational_proposal_no_proposal_association",
+        estimand="adjusted_observational_overlap_population_proposal_no_proposal_association",
         causal=False,
-        proposal_count=overall.proposal_count,
-        no_proposal_count=overall.no_proposal_count,
+        proposal_count=sum(len(proposed) for _, proposed, _ in overlap_strata),
+        no_proposal_count=sum(len(not_proposed) for _, _, not_proposed in overlap_strata),
         proposal_success_rate=adjusted_proposal_rate,
         no_proposal_success_rate=adjusted_no_proposal_rate,
         absolute_risk_difference=adjusted_difference,
         relative_risk=adjusted_proposal_rate / adjusted_no_proposal_rate if adjusted_no_proposal_rate else None,
         adjusted=True,
         covariates=covariates,
+        overlap_population_count=overlap_total,
+        excluded_nonoverlap_count=len(rows) - overlap_total,
     )
 
 
 summarize_observational = proposal_association
-

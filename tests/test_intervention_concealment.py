@@ -40,6 +40,45 @@ def gate(seed: str = "seed", *, worker_callback=lambda value: {"value": value}):
 
 
 class InterventionTests(unittest.TestCase):
+    def test_missing_proposal_id_is_deterministically_normalized_at_runtime(self):
+        calls = []
+        intervention, _ = gate(worker_callback=calls.append)
+        raw = proposal().to_dict()
+        raw.pop("proposal_id")
+        first = intervention._normalize_proposal(raw)
+        second = intervention._normalize_proposal(raw)
+        self.assertEqual(first["proposal_id"], second["proposal_id"])
+        self.assertEqual(len(first["proposal_id"]), 36)
+
+    def test_eligibility_context_is_refreshed_at_decision_time(self):
+        current = {
+            "available_context_refs": set(),
+            "allowed_worker_tools": set(),
+            "prior_objectives": set(),
+            "objective_completed": False,
+            "terminal": False,
+            "oracle_refs": set(),
+            "scenario_in_scope": True,
+        }
+        sink = InMemoryTraceSink()
+        intervention = DelegationInterventionGate(
+            generate_balanced_schedule("dynamic", ["block"], block_size=2),
+            "block",
+            sink,
+            lambda value: {"proposal": value},
+            eligibility_context_provider=lambda: current,
+        )
+        self.assertEqual(
+            intervention.handle_proposal(proposal()).get("reason"),
+            "UNKNOWN_CONTEXT_REFERENCE",
+        )
+        self.assertEqual(intervention.assignment_schedule.consumed_count, 0)
+        current["available_context_refs"] = {"task"}
+        current["allowed_worker_tools"] = {"read_file"}
+        result = intervention.handle_proposal(proposal("A new bounded objective."))
+        self.assertIn(result["status"], {"DELEGATION_EXECUTED", "DELEGATION_UNAVAILABLE"})
+        self.assertEqual(intervention.assignment_schedule.consumed_count, 1)
+
     def test_assignment_is_concealed_until_eligibility(self) -> None:
         intervention, _ = gate()
         self.assertIsNone(intervention.assignment)

@@ -6,7 +6,7 @@ import dataclasses
 import hashlib
 import json
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 
 def _canonicalize(value: Any) -> Any:
@@ -75,6 +75,12 @@ class StateGuard:
     source: Any
     before_hash: str | None = None
     after_hash: str | None = None
+    actor_id: str | None = None
+    actor_role: str | None = None
+    event_id: str | None = None
+    event_type: str | None = None
+    provenance: str | None = None
+    state_records: list["StateEventRecord"] = dataclasses.field(default_factory=list)
 
     def capture_before(self) -> str:
         self.before_hash = canonical_hash(application_state_snapshot(self.source))
@@ -88,6 +94,53 @@ class StateGuard:
     def changed(self) -> bool:
         return self.before_hash is not None and self.after_hash is not None and self.before_hash != self.after_hash
 
+    @property
+    def worker_write_violation(self) -> bool | None:
+        """Return only an explicitly attributable worker-write observation.
+
+        A state change by itself is not enough to attribute a write to a worker;
+        tool permission/provenance is the primary guarantee and this guard is a
+        secondary check for an attributable attempt.
+        """
+
+        worker = self.actor_role == "worker" or self.provenance == "worker"
+        if not worker:
+            return False if self.provenance == "environment" else None
+        return self.changed if self.changed else None
+
+    def record_event(
+        self,
+        *,
+        event_id: str | None,
+        event_type: str,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+        provenance: str | None = None,
+        tool_name: str | None = None,
+        write_operation: bool | None = None,
+        state_before_hash: str | None = None,
+        state_after_hash: str | None = None,
+        simulated_time_before: float | None = None,
+        simulated_time_after: float | None = None,
+    ) -> "StateEventRecord":
+        """Record one explicitly attributed environment/state observation."""
+
+        record = StateEventRecord(
+            event_id=event_id,
+            event_type=event_type,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            provenance=provenance,
+            tool_name=tool_name,
+            write_operation=write_operation,
+            state_before_hash=state_before_hash,
+            state_after_hash=state_after_hash,
+            simulated_time_before=simulated_time_before,
+            simulated_time_after=simulated_time_after,
+        )
+        self.state_records.append(record)
+        return record
+
     def __enter__(self) -> "StateGuard":
         self.capture_before()
         return self
@@ -100,3 +153,75 @@ class StateGuard:
 def guarded_application_state(source: Any) -> StateGuard:
     """Construct a context manager for a worker's application-state guard."""
     return StateGuard(source)
+
+
+@dataclasses.dataclass(frozen=True)
+class StateEventRecord:
+    """A state observation with actor/event provenance.
+
+    ``worker_caused_write`` is deliberately tri-state.  ``False`` means the
+    event is explicitly independent environment activity; ``None`` means the
+    available provenance is insufficient to attribute it.
+    """
+
+    event_id: str | None
+    event_type: str
+    actor_id: str | None = None
+    actor_role: str | None = None
+    provenance: str | None = None
+    tool_name: str | None = None
+    write_operation: bool | None = None
+    state_before_hash: str | None = None
+    state_after_hash: str | None = None
+    simulated_time_before: float | None = None
+    simulated_time_after: float | None = None
+
+    @property
+    def state_changed(self) -> bool | None:
+        if self.state_before_hash is None or self.state_after_hash is None:
+            return None
+        return self.state_before_hash != self.state_after_hash
+
+    @property
+    def worker_caused_write(self) -> bool | None:
+        if self.actor_role == "worker" or self.provenance == "worker":
+            changed = self.state_changed
+            if self.write_operation is True or changed is True:
+                return True
+            if self.write_operation is False and changed is False:
+                return False
+            return None
+        if self.provenance == "environment" or self.actor_role == "environment":
+            return False
+        return None
+
+    @property
+    def write_violation(self) -> bool | None:
+        return self.worker_caused_write
+
+    @property
+    def simulated_duration(self) -> float | None:
+        if self.simulated_time_before is None or self.simulated_time_after is None:
+            return None
+        return self.simulated_time_after - self.simulated_time_before
+
+
+def worker_tool_write_violation(tool: Any) -> bool:
+    """Return whether a tool is unsafe for a worker before execution.
+
+    ARE's ``write_operation=None`` is intentionally unsafe.  This helper is a
+    small provenance-layer mirror of the audited tool contract and does not
+    treat a later state diff as the primary permission decision.
+    """
+
+    if isinstance(tool, Mapping):
+        value = tool.get("write_operation")
+    else:
+        value = getattr(tool, "write_operation", None)
+    return value is not False
+
+
+def all_worker_tools_read_only(tools: Iterable[Any]) -> bool:
+    """Return whether every supplied worker tool has explicit read-only metadata."""
+
+    return all(not worker_tool_write_violation(tool) for tool in tools)

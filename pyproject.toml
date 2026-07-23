@@ -7,7 +7,15 @@ name = "causal-orch"
 version = "0.1.0"
 description = "Fixed causal delegation protocol primitives"
 requires-python = ">=3.11,<3.12"
-dependencies = []
+dependencies = [
+    "meta-agents-research-environments @ git+https://github.com/facebookresearch/meta-agents-research-environments.git@7946367413129784139e785ae4c351090002a0bb",
+    "PyYAML==6.0.2",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest==8.3.4",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -20,6 +20,7 @@ class FailureClass(str, Enum):
     AUTHENTICATION = "AUTHENTICATION"
     HTTP_ERROR = "HTTP_ERROR"
     TRANSPORT_ERROR = "TRANSPORT_ERROR"
+    PROVIDER_IDENTITY_UNVERIFIABLE = "PROVIDER_IDENTITY_UNVERIFIABLE"
 
 
 def classify_http_failure(status_code: int) -> FailureClass:
@@ -100,9 +101,11 @@ def validate_response_metadata(
     if not isinstance(metadata["request_id"], str) or not metadata["request_id"]:
         raise HealthError("METADATA_INVALID:request_id")
     provider = metadata.get("provider")
-    if require_provider and not provider:
-        raise HealthError("PROVIDER_METADATA_MISSING")
-    if pinned_provider is not None and provider is not None and provider != pinned_provider:
+    if provider is not None and (not isinstance(provider, str) or not provider):
+        raise HealthError("METADATA_INVALID:provider")
+    if (require_provider or pinned_provider is not None) and provider is None:
+        raise HealthError("PROVIDER_IDENTITY_UNVERIFIABLE")
+    if pinned_provider is not None and provider != pinned_provider:
         raise HealthError("PROVIDER_PIN_MISMATCH")
 
 

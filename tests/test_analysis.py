@@ -78,7 +78,33 @@ class AnalysisTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             adjusted_proposal_association(rows, ["worker_artifact"])
 
+    def test_adjusted_association_renormalizes_to_overlap_population(self) -> None:
+        rows = [
+            {"proposed": True, "success": True, "capability": "overlap"},
+            {"proposed": False, "success": False, "capability": "overlap"},
+            {"proposed": True, "success": False, "capability": "proposal_only"},
+            {"proposed": False, "success": True, "capability": "control_only"},
+        ]
+
+        association = adjusted_proposal_association(rows, ["capability"])
+
+        self.assertEqual(
+            association.estimand,
+            "adjusted_observational_overlap_population_proposal_no_proposal_association",
+        )
+        self.assertEqual(association.overlap_population_count, 2)
+        self.assertEqual(association.excluded_nonoverlap_count, 2)
+        self.assertEqual((association.proposal_count, association.no_proposal_count), (1, 1))
+        self.assertEqual(association.absolute_risk_difference, 1.0)
+
+    def test_post_treatment_covariate_names_are_rejected(self) -> None:
+        rows = [
+            {"proposed": True, "success": True, "capability": "a"},
+            {"proposed": False, "success": False, "capability": "a"},
+        ]
+        with self.assertRaises(ValueError):
+            adjusted_proposal_association(rows, ["post_treatment_custom"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

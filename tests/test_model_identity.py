@@ -23,6 +23,8 @@ from causal_orch.models.openrouter_engine import (
     OpenRouterProtocolError,
     compute_backoff_delay,
 )
+from causal_orch.tracing.events import EventName
+from causal_orch.tracing.sink import InMemoryTraceSink
 
 
 def manifest(slug: str = MODEL_CANDIDATE_ORDER[0]) -> ModelManifest:
@@ -53,6 +55,13 @@ class FakeTransport:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class FakeDecodingSchema:
+    type = "json"
+
+    def __init__(self, schema):
+        self.decoding_schema = schema
 
 
 def response(*, model=MODEL_CANDIDATE_ORDER[0], provider="PinnedProvider", status_code=200):
@@ -158,6 +167,69 @@ class ModelIdentityTests(unittest.TestCase):
         self.assertEqual(metadata["trace_metadata"]["provider_metadata"]["queue"], "free")
         self.assertNotIn("thought", repr(metadata).lower())
 
+    def test_missing_provider_is_rejected_as_unverifiable(self):
+        body = response().body
+        body.pop("provider")
+        with self.assertRaises(OpenRouterProtocolError) as error:
+            engine(FakeTransport(HTTPResponse(200, body))).chat_completion([])
+        self.assertEqual(error.exception.error_type, "PROVIDER_IDENTITY_UNVERIFIABLE")
+
+    def test_generation_metadata_lookup_verifies_missing_response_provider(self):
+        body = response().body
+        body.pop("provider")
+        seen = []
+
+        def lookup(request_id):
+            seen.append(request_id)
+            return {"data": {"id": request_id, "model": MODEL_CANDIDATE_ORDER[0], "provider_name": "PinnedProvider"}}
+
+        text, metadata = OpenRouterLLMEngine(
+            OpenRouterConfig(MODEL_CANDIDATE_ORDER[0], "PinnedProvider"),
+            transport=FakeTransport(HTTPResponse(200, body)),
+            generation_metadata_lookup=lookup,
+        ).chat_completion([])
+        self.assertEqual(text, "answer")
+        self.assertEqual(metadata["trace_metadata"]["provider_identity_source"], "generation_metadata")
+        self.assertEqual(seen, ["response-request"])
+
+    def test_schema_and_trace_tags_are_sent_and_traced_without_credentials(self):
+        sink = InMemoryTraceSink()
+        transport = FakeTransport(response())
+        schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+        engine(transport, trace_sink=sink).chat_completion(
+            [{"role": "user", "content": "hello"}],
+            schema=schema,
+            additional_trace_tags=["action"],
+        )
+        request = transport.requests[0].json_body
+        self.assertEqual(request["response_format"]["type"], "json_schema")
+        self.assertEqual(request["response_format"]["json_schema"]["schema"], schema)
+        self.assertEqual([event.event_type for event in sink.events], [EventName.MODEL_REQUEST, EventName.MODEL_RESPONSE])
+        self.assertTrue(sink.events[0].prompt_hash)
+        self.assertTrue(sink.events[0].tool_schema_hash)
+        self.assertEqual(sink.events[0].payload["trace_tags"], {"tags": ["action"]})
+        self.assertEqual(sink.events[1].total_tokens, 18)
+        self.assertNotIn("authorization", repr(sink.events).lower())
+        json.dumps([event.to_dict() for event in sink.events])
+
+    def test_trace_tags_preserve_mapping_tuple_and_string_shapes(self):
+        for tags, expected in (
+            ({"phase": "test"}, {"phase": "test"}),
+            (("action", "retry"), {"tags": ["action", "retry"]}),
+            ("action", {"tags": ["action"]}),
+        ):
+            sink = InMemoryTraceSink()
+            engine(FakeTransport(response()), trace_sink=sink).chat_completion(
+                [], additional_trace_tags=tags
+            )
+            self.assertEqual(sink.events[0].payload["trace_tags"], expected)
+
+    def test_are_decoding_schema_object_uses_structured_output(self):
+        transport = FakeTransport(response())
+        schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+        engine(transport).chat_completion(schema=FakeDecodingSchema(schema), messages=[])
+        self.assertEqual(transport.requests[0].json_body["response_format"]["json_schema"]["schema"], schema)
+
     def test_model_or_provider_identity_mismatch_is_deterministic(self):
         with self.assertRaisesRegex(OpenRouterProtocolError, "requested model") as error:
             engine(FakeTransport(response(model=MODEL_CANDIDATE_ORDER[1]))).chat_completion([])
@@ -165,6 +237,18 @@ class ModelIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(OpenRouterProtocolError, "requested provider") as error:
             engine(FakeTransport(response(provider="OtherProvider"))).chat_completion([])
         self.assertEqual(error.exception.error_type, "PROVIDER_IDENTITY_MISMATCH")
+
+    def test_health_rejects_missing_or_non_string_pinned_provider(self):
+        metadata = {
+            "returned_model": MODEL_CANDIDATE_ORDER[0],
+            "prompt_tokens": 1,
+            "completion_tokens": 2,
+            "total_tokens": 3,
+            "completion_duration": 0.1,
+            "request_id": "req",
+        }
+        self.assertFalse(response_qualifies(metadata, MODEL_CANDIDATE_ORDER[0], "PinnedProvider").qualified)
+        self.assertFalse(response_qualifies({**metadata, "provider": 1}, MODEL_CANDIDATE_ORDER[0], "PinnedProvider").qualified)
 
     def test_rate_limit_classification_and_backoff_are_bounded(self):
         self.assertEqual(classify_http_failure(429), FailureClass.RATE_LIMIT)

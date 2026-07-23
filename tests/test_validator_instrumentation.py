@@ -1,6 +1,8 @@
 import unittest
 from dataclasses import dataclass, field
 
+from are.simulation.types import ValidationException
+
 from causal_orch.environment.instrumented_environment import InstrumentedEnvironment
 from causal_orch.evaluation.gaia2 import evaluate_gaia2_scenario
 from causal_orch.evaluation.validator_metrics import (
@@ -19,7 +21,35 @@ class FakeValidator:
 
 
 @dataclass
+class ValidatorWithoutMinefieldFields:
+    milestones: list[object] = field(default_factory=list)
+    achieved_milestones: list[object] = field(default_factory=list)
+
+
+@dataclass
+class ValidatorWithExplicitFailureFields:
+    milestones: list[object] = field(default_factory=list)
+    achieved_milestones: list[object] = field(default_factory=list)
+    minefields: list[object] = field(default_factory=list)
+    triggered_minefields: list[object] = field(default_factory=list)
+    failure_reason: str = ""
+
+
+@dataclass
 class FakeValidatorEvent:
+    event_id: str
+
+
+@dataclass
+class WorkerWriteEvent:
+    event_id: str
+    actor_id: str = "worker-1"
+    actor_role: str = "worker"
+    provenance: str = "worker"
+
+
+@dataclass
+class FailingEvent:
     event_id: str
 
 
@@ -37,6 +67,8 @@ class FakeEnvironment:
             self.agent_action_validators.append(
                 FakeValidator(milestones=["a", "b"], minefields=["mine"], timeout=3)
             )
+        if isinstance(event, FailingEvent):
+            raise ValidationException("Validation event failed and triggered 2 minefields")
         return ["superclass-result", event.event_id]
 
 
@@ -79,6 +111,61 @@ class ValidatorInstrumentationTests(unittest.TestCase):
         self.assertIsNotNone(record.state_before_hash)
         self.assertIsNotNone(record.state_after_hash)
         self.assertNotEqual(record.state_before_hash, record.state_after_hash)
+        self.assertEqual(record.actor_role, "environment")
+        self.assertFalse(record.worker_caused_write)
+
+    def test_provenance_distinguishes_worker_write_from_environment_state_change(self):
+        env = InstrumentedEnvironment(environment=FakeEnvironment())
+
+        env.process_event(WorkerWriteEvent("worker-event"))
+
+        record = env.event_records[0]
+        self.assertTrue(record.worker_caused_write)
+        self.assertTrue(record.write_violation)
+
+    def test_native_validator_failure_count_is_captured_without_inventing_unknown_values(self):
+        env = InstrumentedEnvironment(environment=FakeEnvironment())
+
+        with self.assertRaises(ValidationException):
+            env.process_event(FailingEvent("failed-event"))
+
+        failure = env.validator_failures[0]
+        self.assertEqual(failure.triggered_minefields, 2)
+        self.assertEqual(env.event_records[0].validator_failures[0].triggered_minefields, 2)
+        self.assertIsNone(ValidatorRecord.from_validator(
+            event_id="unknown", activation_index=0, validator=FakeValidator(), activated=True
+        ).triggered_minefields)
+
+    def test_missing_validator_minefield_fields_remain_unknown(self):
+        record = ValidatorRecord.from_validator(
+            event_id="missing",
+            activation_index=0,
+            validator=ValidatorWithoutMinefieldFields(milestones=["m"]),
+            activated=True,
+        )
+
+        self.assertIsNone(record.minefields)
+        self.assertIsNone(record.triggered_minefields)
+        metric = aggregate_validator_milestones([record])
+        self.assertIsNone(metric.minefield_count)
+        self.assertIsNone(metric.triggered_minefield_count)
+
+    def test_explicit_validator_failure_fields_are_preserved(self):
+        record = ValidatorRecord.from_validator(
+            event_id="explicit",
+            activation_index=0,
+            validator=ValidatorWithExplicitFailureFields(
+                milestones=["m"],
+                minefields=["a", "b"],
+                triggered_minefields=["a"],
+                failure_reason="minefield triggered",
+            ),
+            activated=True,
+        )
+
+        self.assertEqual(record.minefields, 2)
+        self.assertEqual(record.triggered_minefields, 1)
+        self.assertEqual(record.failure_reason, "minefield triggered")
 
     def test_activation_index_and_validator_state_are_stable(self):
         base = FakeEnvironment()
@@ -127,6 +214,19 @@ class ValidatorInstrumentationTests(unittest.TestCase):
         self.assertEqual(metric.triggered_minefield_count, 1)
         self.assertEqual(metric.timeout_count, 1)
         self.assertEqual(metric.validator_ids, ("activated:0", "never:0"))
+
+    def test_unknown_triggered_minefields_remain_unknown_in_aggregate(self):
+        metric = aggregate_validator_milestones([
+            ValidatorRecord(
+                event_id="activated",
+                activation_index=0,
+                activated=True,
+                initial_milestones=1,
+                achieved_milestones=0,
+                minefields=1,
+            )
+        ])
+        self.assertIsNone(metric.triggered_minefield_count)
 
 
 if __name__ == "__main__":
