@@ -14,6 +14,11 @@ from .state_guard import canonical_json
 # by a reviewed protocol change after the pinned ARE source has been audited.
 MANUALLY_AUDITED_ALLOWLIST = frozenset(
     {
+        # Exact public names are derived from the scenario app instance name.
+        # The pinned Gaia2 smoke scenario names its EmailClientV2 app "Emails".
+        "Emails__list_emails",
+        "Emails__search_emails",
+        # Retained compatibility names for alternate app-instance naming.
         "EmailClient__search_emails",
         "EmailClientApp__search_emails",
         "FileSystem__read_file",
