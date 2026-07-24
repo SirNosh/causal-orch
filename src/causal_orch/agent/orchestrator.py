@@ -44,9 +44,7 @@ Action format with this JSON action when a bounded read-only subtask is needed:
     "reason_code": "INFORMATION_GAP",
     "context_refs": ["string"],
     "allowed_read_tools": ["string"],
-    "completion_criterion": "string",
-    "max_worker_steps": 1,
-    "max_worker_output_tokens": 1
+    "completion_criterion": "string"
   }}
 }}
 
@@ -54,6 +52,8 @@ Current eligible context references: {context}
 Current permitted worker tool names: {tools}
 Use only the current context references and permitted worker tool names above.
 The proposal_id field may be omitted; the runtime assigns a deterministic UUID.
+Worker execution always uses the fixed experimental budget of 8 steps and 2000
+output tokens; these values are not proposal fields and cannot be changed.
 Only provide concise, task-relevant rationale. Do not provide or store hidden
 chain-of-thought; the intervention response is the only delegation observation.
 """.strip()

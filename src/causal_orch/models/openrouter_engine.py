@@ -192,6 +192,24 @@ class BackoffPolicy:
         return delay
 
 
+@dataclass(frozen=True)
+class GenerationMetadataPollingPolicy:
+    """Small bounded delay for eventually consistent generation records."""
+
+    max_attempts: int = 3
+    delay_seconds: float = 0.25
+    sleeper: Callable[[float], None] = time.sleep
+
+    def __post_init__(self) -> None:
+        if type(self.max_attempts) is not int or self.max_attempts < 1:
+            raise ValueError("max_attempts must be a positive integer")
+        if self.delay_seconds < 0:
+            raise ValueError("delay_seconds must be non-negative")
+
+    def wait(self) -> None:
+        self.sleeper(self.delay_seconds)
+
+
 def _json_body(response: Any) -> Any:
     if isinstance(response, HTTPResponse):
         body = response.body
@@ -332,6 +350,7 @@ class OpenRouterLLMEngine(LLMEngine):
         backoff: BackoffPolicy | None = None,
         correlation_id_factory: Callable[[], str] | None = None,
         generation_metadata_lookup: Callable[[str], Any] | None = None,
+        generation_metadata_polling: GenerationMetadataPollingPolicy | None = None,
     ) -> None:
         super().__init__(config.model_slug)
         self.config = config
@@ -341,6 +360,9 @@ class OpenRouterLLMEngine(LLMEngine):
         self.backoff = backoff or BackoffPolicy()
         self.correlation_id_factory = correlation_id_factory or (lambda: uuid4().hex)
         self.generation_metadata_lookup = generation_metadata_lookup
+        self.generation_metadata_polling = (
+            generation_metadata_polling or GenerationMetadataPollingPolicy()
+        )
         if self.generation_metadata_lookup is None and config.api_key:
             self.generation_metadata_lookup = OpenRouterGenerationMetadataLookup(
                 api_key=config.api_key,
@@ -408,18 +430,29 @@ class OpenRouterLLMEngine(LLMEngine):
 
         if self.generation_metadata_lookup is None:
             return None, {}
-        try:
-            result = self.generation_metadata_lookup(request_id)
-            if _response_status(result) != 200:
-                return None, {}
-            body = _json_body(result)
-        except Exception:
-            return None, {}
-        if not isinstance(body, Mapping):
-            return None, {}
-        data = body.get("data") if isinstance(body.get("data"), Mapping) else body
-        provider = self._provider_name(data.get("provider") or data.get("provider_name"))
-        return provider, data
+        last_data: Mapping[str, Any] = {}
+        for attempt in range(self.generation_metadata_polling.max_attempts):
+            try:
+                result = self.generation_metadata_lookup(request_id)
+                if _response_status(result) == 200:
+                    body = _json_body(result)
+                    if isinstance(body, Mapping):
+                        data = (
+                            body.get("data")
+                            if isinstance(body.get("data"), Mapping)
+                            else body
+                        )
+                        last_data = data
+                        provider = self._provider_name(
+                            data.get("provider") or data.get("provider_name")
+                        )
+                        if provider is not None:
+                            return provider, data
+            except Exception:
+                pass
+            if attempt + 1 < self.generation_metadata_polling.max_attempts:
+                self.generation_metadata_polling.wait()
+        return None, last_data
 
     def chat_completion(
         self,

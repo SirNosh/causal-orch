@@ -110,8 +110,6 @@ class DelegationProposal:
     context_refs: tuple[str, ...]
     allowed_read_tools: tuple[str, ...]
     completion_criterion: str
-    max_worker_steps: int
-    max_worker_output_tokens: int
 
     def __post_init__(self) -> None:
         try:
@@ -135,16 +133,6 @@ class DelegationProposal:
             "allowed_read_tools",
             _string_sequence(self.allowed_read_tools, "allowed_read_tools", MAX_WORKER_TOOLS, MAX_REF_LENGTH),
         )
-        if type(self.max_worker_steps) is not int or not 1 <= self.max_worker_steps <= MAX_WORKER_STEPS:
-            raise ValidationError("max_worker_steps exceeds its bound", RejectionReason.WORKER_BUDGET_EXCEEDED)
-        if (
-            type(self.max_worker_output_tokens) is not int
-            or not 1 <= self.max_worker_output_tokens <= MAX_WORKER_OUTPUT_TOKENS
-        ):
-            raise ValidationError(
-                "max_worker_output_tokens exceeds its bound", RejectionReason.WORKER_BUDGET_EXCEEDED
-            )
-
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "DelegationProposal":
         fields = {
@@ -154,8 +142,6 @@ class DelegationProposal:
             "context_refs",
             "allowed_read_tools",
             "completion_criterion",
-            "max_worker_steps",
-            "max_worker_output_tokens",
         }
         if not isinstance(value, Mapping) or set(value) != fields:
             raise ValidationError("proposal fields are missing or unknown")
@@ -165,6 +151,14 @@ class DelegationProposal:
     def allowed_worker_tools(self) -> tuple[str, ...]:
         return self.allowed_read_tools
 
+    @property
+    def max_worker_steps(self) -> int:
+        return MAX_WORKER_STEPS
+
+    @property
+    def max_worker_output_tokens(self) -> int:
+        return MAX_WORKER_OUTPUT_TOKENS
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "proposal_id": self.proposal_id,
@@ -173,8 +167,6 @@ class DelegationProposal:
             "context_refs": list(self.context_refs),
             "allowed_read_tools": list(self.allowed_read_tools),
             "completion_criterion": self.completion_criterion,
-            "max_worker_steps": self.max_worker_steps,
-            "max_worker_output_tokens": self.max_worker_output_tokens,
         }
 
 

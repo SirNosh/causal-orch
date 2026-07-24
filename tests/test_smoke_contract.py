@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).parents[1]
@@ -18,6 +19,19 @@ def load_smoke():
 
 
 class SmokeContractTests(unittest.TestCase):
+    def test_smoke_schedule_forces_exactly_one_execute_assignment(self):
+        smoke = load_smoke()
+        from causal_orch.runtime.randomization import TreatmentAssignment
+
+        schedule = smoke.SmokeExecuteSchedule("smoke-block")
+        self.assertIsNone(schedule.reveal("smoke-block", eligible=False))
+        self.assertEqual(
+            schedule.reveal("smoke-block", eligible=True),
+            TreatmentAssignment.EXECUTE,
+        )
+        with self.assertRaises(IndexError):
+            schedule.reveal("smoke-block", eligible=True)
+
     def test_configured_placeholders_are_rejected(self):
         smoke = load_smoke()
         errors = smoke.smoke_prerequisite_errors(
@@ -45,15 +59,27 @@ class SmokeContractTests(unittest.TestCase):
 
         class Harness(smoke.Gaia2SmokeHarness):
             def __init__(self):
-                pass
+                self.agent_builder = SimpleNamespace(
+                    experiment_config=SimpleNamespace(
+                        model_config=SimpleNamespace(
+                            model_slug="model-1", provider="provider-1"
+                        )
+                    )
+                )
 
             def direct_action(self):
                 calls.append("direct")
                 return "direct-result"
 
-            def forced_mock_delegation(self):
+            def forced_delegation(self):
                 calls.append("delegation")
-                return "delegation-result"
+                return {
+                    "status": "DELEGATION_EXECUTED",
+                    "artifact": {
+                        "status": "WORKER_COMPLETED",
+                        "artifact": {"artifact_type": "EVIDENCE_REPORT"},
+                    },
+                }
 
             def native_validation(self):
                 calls.append("validation")
@@ -64,7 +90,62 @@ class SmokeContractTests(unittest.TestCase):
                 return [
                     {"event_type": "RUN_STARTED"},
                     {"event_type": "DIRECT_ACTION"},
-                    {"event_type": "FORCED_MOCK_DELEGATION"},
+                    {
+                        "event_type": "INTERVENTION_ASSIGNMENT",
+                        "treatment_assignment": "EXECUTE",
+                    },
+                    {"event_type": "WORKER_STARTED"},
+                    {"event_type": "MODEL_REQUEST"},
+                    {
+                        "event_type": "MODEL_RESPONSE",
+                        "requested_model_slug": "model-1",
+                        "returned_model_slug": "model-1",
+                        "provider_slug": "provider-1",
+                    },
+                    {"event_type": "WORKER_TOOL_CALL"},
+                    {
+                        "event_type": "WORKER_TOOL_RESULT",
+                        "event_id": "result-1",
+                        "error_type": None,
+                    },
+                    {"event_type": "MODEL_REQUEST"},
+                    {
+                        "event_type": "MODEL_RESPONSE",
+                        "requested_model_slug": "model-1",
+                        "returned_model_slug": "model-1",
+                        "provider_slug": "provider-1",
+                    },
+                    {
+                        "event_type": "WORKER_ARTIFACT",
+                        "payload": {
+                            "artifact": {
+                                "artifact_type": "EVIDENCE_REPORT",
+                                "objective": "Find the record.",
+                                "status": "COMPLETE",
+                                "findings": [
+                                    {
+                                        "claim": "Found it.",
+                                        "evidence_refs": [
+                                            "worker_tool_result:result-1"
+                                        ],
+                                        "confidence": "HIGH",
+                                    }
+                                ],
+                                "uncertainties": [],
+                                "contradictions": [],
+                                "recommended_next_action": None,
+                            }
+                        },
+                    },
+                    {"event_type": "ORCHESTRATOR_RESUMED"},
+                    {"event_type": "DELEGATION_EXECUTED"},
+                    {"event_type": "MODEL_REQUEST"},
+                    {
+                        "event_type": "MODEL_RESPONSE",
+                        "requested_model_slug": "model-1",
+                        "returned_model_slug": "model-1",
+                        "provider_slug": "provider-1",
+                    },
                     {"event_type": "RUN_COMPLETED"},
                 ]
 
@@ -81,6 +162,24 @@ class SmokeContractTests(unittest.TestCase):
         smoke = load_smoke()
         with self.assertRaises(smoke.SmokePrerequisiteError):
             smoke.check_trace_completeness([{"event_type": "RUN_STARTED"}, {"event_type": "RUN_COMPLETED"}])
+
+    def test_suppressed_smoke_assignment_is_rejected(self):
+        smoke = load_smoke()
+        with self.assertRaisesRegex(
+            smoke.SmokePrerequisiteError, "TRACE_WORKER_PATH_MISSING"
+        ):
+            smoke.check_trace_completeness(
+                [
+                    {"event_type": "RUN_STARTED"},
+                    {"event_type": "DIRECT_ACTION"},
+                    {
+                        "event_type": "INTERVENTION_ASSIGNMENT",
+                        "treatment_assignment": "SUPPRESS",
+                    },
+                    {"event_type": "DELEGATION_SUPPRESSED"},
+                    {"event_type": "RUN_COMPLETED"},
+                ]
+            )
 
 
 if __name__ == "__main__":

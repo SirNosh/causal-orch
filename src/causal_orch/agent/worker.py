@@ -25,6 +25,7 @@ from causal_orch.runtime.state_guard import StateGuard, canonical_json
 from causal_orch.tracing.events import EventName, OrchestrationEvent
 
 from .schemas import DelegationProposal, EvidenceReport, ValidationError
+from .schemas import MAX_WORKER_OUTPUT_TOKENS, MAX_WORKER_STEPS
 
 
 class TreatmentFailureReason(str, Enum):
@@ -499,8 +500,8 @@ class DelegationWorkerAdapter:
             "permitted_tools": list(permitted),
             "tools": list(permitted),
             "budgets": {
-                "max_steps": proposal.max_worker_steps,
-                "max_output_tokens": proposal.max_worker_output_tokens,
+                "max_steps": MAX_WORKER_STEPS,
+                "max_output_tokens": MAX_WORKER_OUTPUT_TOKENS,
             },
         }
         payload["prompt"] = worker_prompt(payload)

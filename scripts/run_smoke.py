@@ -18,7 +18,7 @@ REQUIRED_SMOKE_CHECKS = (
     "configured_provider",
     "configured_scenario",
     "direct_action",
-    "forced_mock_delegation",
+    "forced_delegation",
     "native_validation",
     "trace_completeness",
 )
@@ -38,7 +38,7 @@ class SmokePlan:
 @dataclass(frozen=True)
 class SmokeExecution:
     direct_action_result: Any
-    forced_mock_delegation_result: Any
+    delegation_result: Any
     validation_result: Any
     native_success: bool
     trace_event_names: tuple[str, ...]
@@ -49,6 +49,26 @@ class SmokePrerequisiteError(ValueError):
 
 
 SmokeRunner = Callable[[SmokeStep], Any]
+
+
+class SmokeExecuteSchedule:
+    """One-shot deterministic treatment schedule, only for integration smoke."""
+
+    def __init__(self, block_key: Any) -> None:
+        self.block_key = block_key
+        self.consumed_count = 0
+
+    def reveal(self, block_key: Any, *, eligible: bool) -> Any:
+        from causal_orch.runtime.randomization import TreatmentAssignment
+
+        if not eligible:
+            return None
+        if block_key != self.block_key:
+            raise KeyError(f"unknown smoke block: {block_key!r}")
+        if self.consumed_count:
+            raise IndexError("smoke assignment already consumed")
+        self.consumed_count = 1
+        return TreatmentAssignment.EXECUTE
 
 
 class Gaia2SmokeHarness:
@@ -124,16 +144,26 @@ class Gaia2SmokeHarness:
         )
         return result
 
-    def forced_mock_delegation(self) -> Any:
+    def forced_delegation(self) -> Any:
         from are.simulation.agents.default_agent.tools.action_executor import ParsedAction
 
         self._start()
-        return self.agent.react_agent.action_executor.execute_parsed_action(
+        gate = self.agent.react_agent.action_executor.intervention_gate
+        if gate.decided:
+            raise SmokePrerequisiteError("SMOKE_GATE_ALREADY_DECIDED")
+        gate.assignment_schedule = SmokeExecuteSchedule(gate.block_key)
+        result = self.agent.react_agent.action_executor.execute_parsed_action(
             ParsedAction(tool_name="DELEGATE", arguments=self.delegation_proposal),
             self.agent.react_agent.append_agent_log,
             self.agent.react_agent.make_timestamp,
             self.agent.react_agent.agent_id,
         )
+        if (
+            isinstance(result, Mapping)
+            and result.get("status") == "DELEGATION_EXECUTED"
+        ):
+            self.agent.react_agent.step()
+        return result
 
     def native_validation(self) -> Any:
         self._start()
@@ -262,7 +292,18 @@ def _event_name(event: Any) -> str:
     return getattr(value, "value", value) if isinstance(getattr(value, "value", value), str) else str(value)
 
 
-def check_trace_completeness(events: Sequence[Any]) -> tuple[str, ...]:
+def _event_value(event: Any, name: str, default: Any = None) -> Any:
+    return event.get(name, default) if isinstance(event, Mapping) else getattr(event, name, default)
+
+
+def check_trace_completeness(
+    events: Sequence[Any],
+    *,
+    expected_model: str | None = None,
+    expected_provider: str | None = None,
+) -> tuple[str, ...]:
+    from causal_orch.agent.schemas import EvidenceReport
+
     names = tuple(_event_name(event) for event in events)
     if not names:
         raise SmokePrerequisiteError("TRACE_EMPTY")
@@ -270,8 +311,89 @@ def check_trace_completeness(events: Sequence[Any]) -> tuple[str, ...]:
         raise SmokePrerequisiteError("TRACE_RUN_BOUNDARIES_MISSING")
     if "DIRECT_ACTION" not in names:
         raise SmokePrerequisiteError("TRACE_DIRECT_ACTION_MISSING")
-    if not ({"FORCED_MOCK_DELEGATION", "DELEGATION_EXECUTED", "DELEGATION_SUPPRESSED"} & set(names)):
-        raise SmokePrerequisiteError("TRACE_FORCED_DELEGATION_MISSING")
+    required = (
+        "INTERVENTION_ASSIGNMENT",
+        "WORKER_STARTED",
+        "WORKER_TOOL_CALL",
+        "WORKER_TOOL_RESULT",
+        "WORKER_ARTIFACT",
+        "ORCHESTRATOR_RESUMED",
+        "DELEGATION_EXECUTED",
+    )
+    missing = [name for name in required if name not in names]
+    if missing:
+        raise SmokePrerequisiteError(f"TRACE_WORKER_PATH_MISSING:{','.join(missing)}")
+    assignment_event = events[names.index("INTERVENTION_ASSIGNMENT")]
+    if _event_value(assignment_event, "treatment_assignment") != "EXECUTE":
+        raise SmokePrerequisiteError("SMOKE_ASSIGNMENT_NOT_EXECUTE")
+    positions = [names.index(name) for name in required]
+    if positions != sorted(positions):
+        raise SmokePrerequisiteError("TRACE_WORKER_ORDER_INVALID")
+    request_positions = [index for index, name in enumerate(names) if name == "MODEL_REQUEST"]
+    response_positions = [index for index, name in enumerate(names) if name == "MODEL_RESPONSE"]
+    if len(request_positions) < 3 or len(response_positions) < 3:
+        raise SmokePrerequisiteError("TRACE_WORKER_MODEL_ROUNDTRIPS_MISSING")
+    if any(request >= response for request, response in zip(request_positions, response_positions)):
+        raise SmokePrerequisiteError("TRACE_MODEL_ORDER_INVALID")
+    worker_started = names.index("WORKER_STARTED")
+    tool_call = names.index("WORKER_TOOL_CALL")
+    tool_result = names.index("WORKER_TOOL_RESULT")
+    artifact_position = names.index("WORKER_ARTIFACT")
+    delegation_position = names.index("DELEGATION_EXECUTED")
+    if not any(
+        worker_started < request < response < tool_call
+        for request, response in zip(request_positions, response_positions)
+    ):
+        raise SmokePrerequisiteError("TRACE_WORKER_READ_MODEL_ROUNDTRIP_MISSING")
+    if not any(
+        tool_result < request < response < artifact_position
+        for request, response in zip(request_positions, response_positions)
+    ):
+        raise SmokePrerequisiteError("TRACE_WORKER_ARTIFACT_MODEL_ROUNDTRIP_MISSING")
+    if not any(
+        delegation_position < request < response
+        for request, response in zip(request_positions, response_positions)
+    ):
+        raise SmokePrerequisiteError("TRACE_ORCHESTRATOR_CONTINUATION_MISSING")
+    for index in response_positions:
+        event = events[index]
+        requested = _event_value(event, "requested_model_slug")
+        returned = _event_value(event, "returned_model_slug")
+        provider = _event_value(event, "provider_slug")
+        if expected_model is not None and (
+            requested != expected_model or returned != expected_model
+        ):
+            raise SmokePrerequisiteError("TRACE_MODEL_IDENTITY_MISMATCH")
+        if expected_provider is not None and provider != expected_provider:
+            raise SmokePrerequisiteError("TRACE_PROVIDER_IDENTITY_MISMATCH")
+    result_events = {
+        f"worker_tool_result:{_event_value(event, 'event_id')}"
+        for event in events
+        if _event_name(event) == "WORKER_TOOL_RESULT"
+        and _event_value(event, "error_type") is None
+    }
+    artifact_event = events[names.index("WORKER_ARTIFACT")]
+    artifact_payload = _event_value(artifact_event, "payload", {})
+    artifact = EvidenceReport.from_dict(artifact_payload.get("artifact"))
+    citations = {
+        ref for finding in artifact.findings for ref in finding.evidence_refs
+    }
+    if not citations.intersection(result_events):
+        raise SmokePrerequisiteError("TRACE_ARTIFACT_TOOL_EVIDENCE_MISSING")
+    for event in events:
+        if _event_value(event, "protocol_violation") == "STATE_DIFF_VIOLATION":
+            raise SmokePrerequisiteError("TRACE_WORKER_STATE_WRITE_VIOLATION")
+        if _event_name(event) == "STATE_CHANGED_DURING_WORKER":
+            payload = _event_value(event, "payload", {})
+            if payload.get("attribution") == "worker":
+                raise SmokePrerequisiteError("TRACE_WORKER_STATE_WRITE_VIOLATION")
+        to_json = getattr(event, "to_json", None)
+        if callable(to_json):
+            json.loads(to_json())
+        elif isinstance(event, Mapping):
+            json.dumps(event)
+        else:
+            raise SmokePrerequisiteError("TRACE_EVENT_NOT_SERIALIZABLE")
     if names.index("RUN_STARTED") > names.index("RUN_COMPLETED"):
         raise SmokePrerequisiteError("TRACE_ORDER_INVALID")
     return names
@@ -299,15 +421,31 @@ def run_configured_smoke(scenario_factory: Callable[[], Any]) -> SmokeExecution:
         )
     try:
         direct = harness.direct_action()
-        delegated = harness.forced_mock_delegation()
+        delegated = harness.forced_delegation()
+        if not isinstance(delegated, Mapping) or delegated.get("status") != "DELEGATION_EXECUTED":
+            raise SmokePrerequisiteError("SMOKE_DELEGATION_NOT_EXECUTED")
+        worker_result = delegated.get("artifact")
+        if (
+            not isinstance(worker_result, Mapping)
+            or worker_result.get("status") != "WORKER_COMPLETED"
+            or not isinstance(worker_result.get("artifact"), Mapping)
+        ):
+            raise SmokePrerequisiteError("SMOKE_WORKER_NOT_COMPLETED")
         validation = harness.native_validation()
         events = harness.trace_events()
+        experiment = harness.agent_builder.experiment_config
+        model = experiment.model_config.model_slug
+        provider = experiment.model_config.provider
         return SmokeExecution(
             direct,
             delegated,
             validation,
             _native_success(validation),
-            check_trace_completeness(events),
+            check_trace_completeness(
+                events,
+                expected_model=model,
+                expected_provider=provider,
+            ),
         )
     finally:
         harness.close()

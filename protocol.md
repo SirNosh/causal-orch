@@ -534,12 +534,14 @@ Action:
     "reason_code": "TEMPORAL_DEPENDENCY_UNRESOLVED",
     "context_refs": ["task", "transaction_record", "notification_04"],
     "allowed_read_tools": ["EmailClient__search_emails", "FileSystem__read_file"],
-    "completion_criterion": "Identify the active version and cite supporting records.",
-    "max_worker_steps": 8,
-    "max_worker_output_tokens": 2000
+    "completion_criterion": "Identify the active version and cite supporting records."
   }
 }<end_action>
 ```
+
+The orchestrator does not choose treatment intensity. Every eligible executed
+delegation receives the fixed runtime budget of 8 worker steps and 2,000 worker
+output tokens.
 
 ## 12.1 Reason codes
 

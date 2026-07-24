@@ -120,6 +120,9 @@ class BuilderTests(unittest.TestCase):
         prompt = orchestrator.refresh_delegation_prompt()
         self.assertIn('"task"', prompt)
         self.assertIn('"FileSystem__read_file"', prompt)
+        self.assertNotIn('"max_worker_steps"', prompt)
+        self.assertNotIn('"max_worker_output_tokens"', prompt)
+        self.assertIn("fixed experimental budget of 8 steps and 2000", prompt)
 
     def test_orchestrator_exposes_delegate_without_an_application_tool(self):
         experiment = make_experiment()

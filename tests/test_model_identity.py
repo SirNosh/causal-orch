@@ -17,6 +17,7 @@ from causal_orch.models.manifests import (
 )
 from causal_orch.models.openrouter_engine import (
     BackoffPolicy,
+    GenerationMetadataPollingPolicy,
     HTTPRequest,
     HTTPResponse,
     OpenRouterLLMEngine,
@@ -226,6 +227,32 @@ class ModelIdentityTests(unittest.TestCase):
             generation_metadata_lookup=lookup,
         ).chat_completion([])
         self.assertEqual(seen, ["generation-id"])
+
+    def test_generation_metadata_lookup_polls_boundedly_until_available(self):
+        body = response().body
+        body.pop("provider")
+        attempts = []
+        waits = []
+
+        def lookup(request_id):
+            attempts.append(request_id)
+            if len(attempts) < 3:
+                return HTTPResponse(404, {"error": "not ready"})
+            return {"data": {"provider_name": "PinnedProvider"}}
+
+        text, _metadata = OpenRouterLLMEngine(
+            OpenRouterConfig(MODEL_CANDIDATE_ORDER[0], "PinnedProvider"),
+            transport=FakeTransport(HTTPResponse(200, body)),
+            generation_metadata_lookup=lookup,
+            generation_metadata_polling=GenerationMetadataPollingPolicy(
+                max_attempts=3,
+                delay_seconds=0.01,
+                sleeper=waits.append,
+            ),
+        ).chat_completion([])
+        self.assertEqual(text, "answer")
+        self.assertEqual(attempts, ["response-request"] * 3)
+        self.assertEqual(waits, [0.01, 0.01])
 
     def test_schema_and_trace_tags_are_sent_and_traced_without_credentials(self):
         sink = InMemoryTraceSink()

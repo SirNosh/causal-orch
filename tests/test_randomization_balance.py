@@ -27,8 +27,6 @@ def proposal(objective: str = "Find the relevant record.") -> DelegationProposal
         context_refs=("task",),
         allowed_read_tools=("read_file",),
         completion_criterion="Name the record and cite it.",
-        max_worker_steps=8,
-        max_worker_output_tokens=2000,
     )
 
 

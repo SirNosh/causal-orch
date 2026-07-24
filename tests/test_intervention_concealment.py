@@ -21,8 +21,6 @@ def proposal(objective: str = "Find the relevant record.") -> DelegationProposal
         context_refs=("task",),
         allowed_read_tools=("read_file",),
         completion_criterion="Name the record and cite it.",
-        max_worker_steps=8,
-        max_worker_output_tokens=2000,
     )
 
 
@@ -40,6 +38,15 @@ def gate(seed: str = "seed", *, worker_callback=lambda value: {"value": value}):
 
 
 class InterventionTests(unittest.TestCase):
+    def test_model_proposal_cannot_choose_worker_budget(self):
+        raw = proposal().to_dict()
+        self.assertNotIn("max_worker_steps", raw)
+        self.assertNotIn("max_worker_output_tokens", raw)
+        raw["max_worker_steps"] = 1
+        result, _sink = gate()
+        rejected = result.handle_proposal(raw)
+        self.assertEqual(rejected["reason"], "INVALID_SCHEMA")
+
     def test_missing_proposal_id_is_deterministically_normalized_at_runtime(self):
         calls = []
         intervention, _ = gate(worker_callback=calls.append)

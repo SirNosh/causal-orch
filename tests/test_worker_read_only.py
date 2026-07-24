@@ -77,12 +77,14 @@ class WorkerReadOnlyTests(unittest.TestCase):
             "context_refs": ["task"],
             "allowed_read_tools": ["FileSystem__read_file"],
             "completion_criterion": "Name the record and cite the selected context.",
-            "max_worker_steps": 2,
-            "max_worker_output_tokens": 20,
         }
 
         def fake_worker(payload, tools):
             self.assertEqual(payload["context"], {"task": {"case": "42"}})
+            self.assertEqual(
+                payload["budgets"],
+                {"max_steps": 8, "max_output_tokens": 2000},
+            )
             self.assertIn("completion criterion", payload["prompt"].lower())
             self.assertNotIn("ReadTool", repr(payload))
             self.assertEqual(tools[0](), "record-42")
@@ -164,8 +166,6 @@ class WorkerReadOnlyTests(unittest.TestCase):
             "context_refs": ["task"],
             "allowed_read_tools": ["FileSystem__read_file"],
             "completion_criterion": "Name the record.",
-            "max_worker_steps": 3,
-            "max_worker_output_tokens": 20,
         }
         result = DelegationWorkerAdapter(
             environment={"apps": {}},
@@ -203,8 +203,6 @@ class WorkerReadOnlyTests(unittest.TestCase):
             "context_refs": [],
             "allowed_read_tools": [],
             "completion_criterion": "Name the record.",
-            "max_worker_steps": 1,
-            "max_worker_output_tokens": 2,
         }
 
         def over_budget_engine(*_args, **_kwargs):
@@ -267,8 +265,6 @@ class WorkerReadOnlyTests(unittest.TestCase):
                 "context_refs": ["task"],
                 "allowed_read_tools": [],
                 "completion_criterion": "Name the record.",
-                "max_worker_steps": 2,
-                "max_worker_output_tokens": 20,
             }
         )
         self.assertEqual(result["status"], "WORKER_COMPLETED")
@@ -309,8 +305,6 @@ class WorkerReadOnlyTests(unittest.TestCase):
                 "context_refs": ["task"],
                 "allowed_read_tools": ["FileSystem__read_file"],
                 "completion_criterion": "Name the record.",
-                "max_worker_steps": 2,
-                "max_worker_output_tokens": 20,
             }
         )
         self.assertEqual(result["status"], "WORKER_COMPLETED")
