@@ -105,12 +105,16 @@ class WorkerReadOnlyTests(unittest.TestCase):
 
     def test_return_artifact_tool_validates_and_base_agent_factory_is_available(self):
         returned = []
+        worker_logs = []
         tool = ReturnArtifactTool(returned.append)
         validated = tool(artifact())
         self.assertEqual(validated["artifact_type"], "EVIDENCE_REPORT")
         self.assertEqual(returned[0].objective, "Find the record.")
 
-        factory = BaseAgentWorkerFactory(lambda *_args, **_kwargs: "unused")
+        factory = BaseAgentWorkerFactory(
+            lambda *_args, **_kwargs: "unused",
+            log_callback=worker_logs.append,
+        )
         agent = factory(
             {
                 "objective": "Find the record.",
@@ -124,6 +128,7 @@ class WorkerReadOnlyTests(unittest.TestCase):
             (),
         )
         self.assertEqual(agent.action_executor.tools["return_artifact"].name, "return_artifact")
+        self.assertEqual(agent.log_callback, worker_logs.append)
 
     def test_default_base_agent_worker_emits_events_invokes_read_tool_and_pauses_per_generation(self):
         calls = []

@@ -278,6 +278,24 @@ def _safe_metadata(value: Any) -> Any:
     )
 
 
+def _openrouter_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Translate ARE-only conversation roles to OpenAI-compatible message roles."""
+
+    normalized: list[dict[str, Any]] = []
+    role_map = {"tool-call": "assistant", "tool-response": "user"}
+    for message in messages:
+        if not isinstance(message, Mapping):
+            raise OpenRouterProtocolError(
+                "each message must be an object",
+                error_type="INVALID_REQUEST",
+            )
+        item = dict(message)
+        role = getattr(item.get("role"), "value", item.get("role"))
+        item["role"] = role_map.get(role, role)
+        normalized.append(item)
+    return normalized
+
+
 def _normalize_trace_tags(value: Any) -> dict[str, Any]:
     if value is None:
         candidate: Any = {}
@@ -475,7 +493,7 @@ class OpenRouterLLMEngine(LLMEngine):
             raise OpenRouterProtocolError("messages must be a list", error_type="INVALID_REQUEST")
         trace_tags = _normalize_trace_tags(additional_trace_tags)
         try:
-            safe_messages = _safe_metadata(messages)
+            safe_messages = _safe_metadata(_openrouter_messages(messages))
         except OpenRouterProtocolError:
             raise
         schema_request, schema_strategy = (None, None) if schema is None else _schema_request(schema)

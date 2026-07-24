@@ -4,6 +4,8 @@ import json
 import unittest
 from unittest.mock import patch
 
+from are.simulation.agents.llm.types import MessageRole
+
 from causal_orch.models.health import (
     FailureClass,
     classify_http_failure,
@@ -155,6 +157,19 @@ class ModelIdentityTests(unittest.TestCase):
             "require_parameters": True,
         })
         self.assertTrue(transport.requests[0].headers["X-Request-ID"])
+
+    def test_are_tool_response_role_is_openrouter_compatible(self):
+        transport = FakeTransport(response())
+        engine(transport).chat_completion(
+            [
+                {"role": MessageRole.ASSISTANT, "content": "Action"},
+                {"role": MessageRole.TOOL_RESPONSE, "content": "Observation"},
+            ]
+        )
+        self.assertEqual(
+            [message["role"] for message in transport.requests[0].json_body["messages"]],
+            ["assistant", "user"],
+        )
 
     def test_payload_routes_by_slug_and_verifies_provider_name(self):
         transport = FakeTransport(response())

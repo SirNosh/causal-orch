@@ -169,6 +169,7 @@ class CausalAgentBuilder(AbstractAgentBuilder):
                 resume_env=env.resume_with_offset,
                 time_manager=env.time_manager,
                 simulated_generation_time_config=time_config,
+                log_callback=env.append_to_world_logs,
             )
 
         gate = self.gate_factory(

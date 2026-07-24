@@ -19,6 +19,13 @@ def load_smoke():
 
 
 class SmokeContractTests(unittest.TestCase):
+    def test_pinned_factory_requires_environment_credential(self):
+        smoke = load_smoke()
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(smoke.SmokePrerequisiteError) as error:
+                smoke.pinned_gaia2_factory()
+        self.assertEqual(str(error.exception), "OPENROUTER_API_KEY is not set")
+
     def test_smoke_schedule_forces_exactly_one_execute_assignment(self):
         smoke = load_smoke()
         from causal_orch.runtime.randomization import TreatmentAssignment

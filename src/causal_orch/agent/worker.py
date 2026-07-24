@@ -351,6 +351,9 @@ def worker_prompt(payload: Mapping[str, Any]) -> str:
             "Do not write, delete, update, send messages, contact the user, wait, control the environment, recurse, or delegate.",
             "Use ARE's required Thought / Action JSON format and call exactly one tool per action.",
             "When finished, call return_artifact with one EvidenceReport. Do not provide the report as plain text.",
+            "Keep the report concise and limited to the delegated objective; do not answer or discuss the broader task.",
+            "Every string field must be a single line with no newline or other control characters.",
+            f"The report objective must equal this string exactly: {json.dumps(str(payload['objective']))}",
             f"The return_artifact payload must match this schema: {json.dumps(artifact_schema, sort_keys=True)}",
         )
     )
@@ -368,12 +371,14 @@ class BaseAgentWorkerFactory:
         resume_env: Callable[[float], None] | None = None,
         time_manager: Any | None = None,
         simulated_generation_time_config: Any | None = None,
+        log_callback: Callable[[Any], None] | None = None,
     ) -> None:
         self.llm_engine = llm_engine
         self.pause_env = pause_env
         self.resume_env = resume_env
         self.time_manager = time_manager
         self.simulated_generation_time_config = simulated_generation_time_config
+        self.log_callback = log_callback
 
     def __call__(self, payload: Mapping[str, Any], tools: tuple[Any, ...]) -> BaseAgent:
         holder: dict[str, EvidenceReport] = {}
@@ -405,6 +410,7 @@ class BaseAgentWorkerFactory:
             total_iterations=payload["budgets"]["max_steps"],
             time_manager=self.time_manager,
             simulated_generation_time_config=self.simulated_generation_time_config,
+            log_callback=self.log_callback,
             use_custom_logger=False,
         )
         if self.pause_env is not None:
@@ -435,6 +441,7 @@ class DelegationWorkerAdapter:
         resume_env: Callable[[float], None] | None = None,
         time_manager: Any | None = None,
         simulated_generation_time_config: Any | None = None,
+        log_callback: Callable[[Any], None] | None = None,
         audited_allowlist: frozenset[str] = MANUALLY_AUDITED_ALLOWLIST,
     ) -> None:
         if worker_factory is not None and worker_runner is not None:
@@ -451,6 +458,7 @@ class DelegationWorkerAdapter:
                 resume_env=resume_env,
                 time_manager=time_manager,
                 simulated_generation_time_config=simulated_generation_time_config,
+                log_callback=log_callback,
             )
         self.trace_sink = trace_sink
         self.pause_env = pause_env

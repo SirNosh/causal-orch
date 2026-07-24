@@ -83,6 +83,7 @@ class Gaia2SmokeHarness:
         direct_tool_name: str,
         direct_tool_arguments: Mapping[str, Any],
         delegation_proposal: Mapping[str, Any],
+        task: str | None = None,
         environment_factory: Callable[[], Any] | None = None,
     ) -> None:
         self.scenario_path = Path(scenario_path)
@@ -91,6 +92,7 @@ class Gaia2SmokeHarness:
         self.direct_tool_name = direct_tool_name
         self.direct_tool_arguments = dict(direct_tool_arguments)
         self.delegation_proposal = dict(delegation_proposal)
+        self.task = task
         self.environment_factory = environment_factory
         self._started = False
 
@@ -121,6 +123,17 @@ class Gaia2SmokeHarness:
             notification_system=getattr(self.environment, "notification_system", None),
         )
         self.agent.react_agent.initialize()
+        if self.task:
+            from are.simulation.agents.agent_log import TaskLog
+
+            self.agent.react_agent.append_agent_log(
+                TaskLog(
+                    content=self.task,
+                    timestamp=self.agent.react_agent.make_timestamp(),
+                    agent_id=self.agent.react_agent.agent_id,
+                )
+            )
+            self.agent.react_agent.refresh_delegation_prompt()
         self._emit("RUN_STARTED")
         self._started = True
 
@@ -162,7 +175,7 @@ class Gaia2SmokeHarness:
             isinstance(result, Mapping)
             and result.get("status") == "DELEGATION_EXECUTED"
         ):
-            self.agent.react_agent.step()
+            self.agent.react_agent.execute_agent_loop()
         return result
 
     def native_validation(self) -> Any:
@@ -180,6 +193,67 @@ class Gaia2SmokeHarness:
         self.agent.stop()
         self.environment.stop()
         self._started = False
+
+
+def pinned_gaia2_factory() -> Gaia2SmokeHarness:
+    """Build the committed Gaia2/OpenRouter smoke harness from environment credentials."""
+
+    from causal_orch.models.manifests import ModelManifest, OpenRouterConfig
+    from causal_orch.runner.agent_builder import CausalAgentBuilder
+    from causal_orch.runner.config_builder import CausalAgentConfigBuilder, ExperimentConfig
+    from causal_orch.runtime.randomization import generate_balanced_schedule
+    from causal_orch.tracing.context import RunContext
+    from causal_orch.tracing.sink import InMemoryTraceSink
+
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise SmokePrerequisiteError("OPENROUTER_API_KEY is not set")
+    root = Path(__file__).resolve().parents[1]
+    gaia = json.loads((root / "configs" / "gaia2_manifest.json").read_text(encoding="utf-8"))
+    openrouter = json.loads(
+        (root / "configs" / "openrouter_manifest.json").read_text(encoding="utf-8")
+    )
+    scenario_id = gaia["scenario_ids"][0]
+    model_manifest = ModelManifest.from_dict(openrouter["model_manifest"])
+    provider = openrouter["provider_manifest"]
+    block_key = "smoke"
+    trace_sink = InMemoryTraceSink(
+        context=RunContext(
+            run_id=f"smoke-{scenario_id}",
+            scenario_id=scenario_id,
+            capability=gaia["selection"]["capability"],
+            model_slug=model_manifest.requested_model_slug,
+            provider_slug=provider["provider_name"],
+            temporal_batch="smoke",
+            block_key=block_key,
+            attempt_id="1",
+        )
+    )
+    model_config = OpenRouterConfig(
+        model_slug=model_manifest.requested_model_slug,
+        provider=provider["provider_name"],
+        routing_provider_slug=provider["provider_slug"],
+        reasoning={"effort": "low"},
+        api_key=api_key,
+    )
+    experiment = ExperimentConfig(
+        model_manifest=model_manifest,
+        model_config=model_config,
+        intervention_schedule=generate_balanced_schedule("smoke", [block_key]),
+        intervention_block=block_key,
+        trace_sink=trace_sink,
+        worker_callback=lambda _proposal: None,
+        max_iterations=12,
+    )
+    return Gaia2SmokeHarness(
+        scenario_path=root / gaia["scenario_files"][scenario_id],
+        agent_builder=CausalAgentBuilder(experiment),
+        agent_config_builder=CausalAgentConfigBuilder(experiment),
+        direct_tool_name=gaia["smoke"]["direct_tool_name"],
+        direct_tool_arguments=gaia["smoke"]["direct_tool_arguments"],
+        delegation_proposal=gaia["smoke"]["delegation_proposal"],
+        task=gaia["selection"]["task"],
+    )
 
 
 def build_smoke_plan(
@@ -430,8 +504,12 @@ def run_configured_smoke(scenario_factory: Callable[[], Any]) -> SmokeExecution:
             or worker_result.get("status") != "WORKER_COMPLETED"
             or not isinstance(worker_result.get("artifact"), Mapping)
         ):
-            raise SmokePrerequisiteError("SMOKE_WORKER_NOT_COMPLETED")
+            failure = worker_result.get("failure") if isinstance(worker_result, Mapping) else None
+            raise SmokePrerequisiteError(f"SMOKE_WORKER_NOT_COMPLETED:{failure}")
         validation = harness.native_validation()
+        native_success = _native_success(validation)
+        if not native_success:
+            raise SmokePrerequisiteError("NATIVE_VALIDATION_FAILED")
         events = harness.trace_events()
         experiment = harness.agent_builder.experiment_config
         model = experiment.model_config.model_slug
@@ -440,7 +518,7 @@ def run_configured_smoke(scenario_factory: Callable[[], Any]) -> SmokeExecution:
             direct,
             delegated,
             validation,
-            _native_success(validation),
+            native_success,
             check_trace_completeness(
                 events,
                 expected_model=model,

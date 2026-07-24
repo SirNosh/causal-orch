@@ -106,6 +106,8 @@ class ConfigAndScriptTests(unittest.TestCase):
             "build_tool_allowlist",
             "qualify_models",
             "run_smoke",
+            "setup_are_gui",
+            "run_are_gui",
             "fetch_pinned_gaia2",
         ):
             with self.subTest(name=name):

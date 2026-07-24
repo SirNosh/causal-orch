@@ -16,9 +16,18 @@ dependencies = [
 test = [
     "pytest==8.3.4",
 ]
+gui = [
+    "fastapi==0.116.1",
+    "pypdf==6.0.0",
+    "starlette==0.47.2",
+    "strawberry-graphql==0.275.5",
+    "uvicorn==0.35.0",
+    "wsproto==1.2.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+testpaths = ["tests"]
