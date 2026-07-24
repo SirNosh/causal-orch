@@ -7,6 +7,10 @@ on:
     paths:
       - scripts/inspect_gaia2_candidates.py
       - .github/workflows/inspect-gaia2.yml
+  pull_request:
+    paths:
+      - scripts/inspect_gaia2_candidates.py
+      - .github/workflows/inspect-gaia2.yml
   workflow_dispatch:
 
 permissions:
