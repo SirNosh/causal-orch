@@ -12,6 +12,7 @@ from causal_orch.agent.schemas import (
 from causal_orch.runtime.randomization import (
     AssignmentManifest,
     AssignmentSchedule,
+    BlockAssignmentManifest,
     TreatmentAssignment,
     derive_block_key,
     generate_balanced_schedule,
@@ -32,6 +33,28 @@ def proposal(objective: str = "Find the relevant record.") -> DelegationProposal
 
 
 class RandomizationTests(unittest.TestCase):
+    def test_block_manifest_preallocates_balanced_immutable_run_assignments(self):
+        manifest = BlockAssignmentManifest.create(
+            run_ids=("run-1", "run-2", "run-3", "run-4"),
+            model_slug="model-1",
+            capability="email",
+            scenario_id="scenario-1",
+            temporal_batch="batch-1",
+            seed="seed",
+        )
+        assignments = [assignment for _run_id, assignment in manifest.run_assignments]
+        self.assertEqual(assignments.count(TreatmentAssignment.EXECUTE), 2)
+        self.assertEqual(assignments.count(TreatmentAssignment.SUPPRESS), 2)
+        schedule = manifest.schedule_for("run-2")
+        self.assertIsNone(schedule.reveal(manifest.block_key, eligible=False))
+        self.assertEqual(
+            schedule.reveal(manifest.block_key, eligible=True),
+            manifest.assignment_for("run-2"),
+        )
+        self.assertEqual(schedule.records[0].run_id, "run-2")
+        with self.assertRaises(IndexError):
+            schedule.reveal(manifest.block_key, eligible=True)
+
     def test_manifest_round_trip_and_deterministic_block_derivation(self) -> None:
         manifest = AssignmentManifest.create(
             run_id="run-1",

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from typing import Any, Callable, Mapping
 
+from are.simulation.agents.agent_log import SystemPromptLog
 from are.simulation.agents.default_agent.base_agent import BaseAgent
 from are.simulation.agents.default_agent.steps.are_simulation import (
     get_are_simulation_update_pre_step,
@@ -12,6 +14,11 @@ from are.simulation.agents.default_agent.steps.are_simulation import (
 from are.simulation.agents.default_agent.termination_methods.are_simulation import (
     get_gaia2_termination_step,
 )
+from are.simulation.agents.default_agent.prompts.system_prompt import (
+    DEFAULT_ARE_SIMULATION_REACT_JSON_SYSTEM_PROMPT,
+)
+
+from causal_orch.runtime.context_registry import TraceContextRegistry
 
 
 _DELEGATE_PROMPT_START = "<!-- causal-orch delegation instructions -->"
@@ -64,7 +71,7 @@ class CausalOrchestrator(BaseAgent):
         llm_engine: Callable,
         action_executor: Any,
         tools: dict[str, Any] | None = None,
-        system_prompt: str = "<<notification_system_description>>\n<<curent_time_description>>\n<<tool_descriptions>>",
+        system_prompt: str = DEFAULT_ARE_SIMULATION_REACT_JSON_SYSTEM_PROMPT,
         max_iterations: int = 80,
         time_manager: Any | None = None,
         log_callback: Callable | None = None,
@@ -77,6 +84,7 @@ class CausalOrchestrator(BaseAgent):
 
         self.eligibility_context_provider = eligibility_context_provider
         self._delegation_base_prompt = system_prompt
+        self.context_registry = TraceContextRegistry()
         super().__init__(
             llm_engine=llm_engine,
             system_prompts={
@@ -96,6 +104,9 @@ class CausalOrchestrator(BaseAgent):
         # This is intentionally a prompt-only pseudo-action. ARE application
         # tools use the normal BaseAgent/ARESimulationAgent tool path.
         self.delegate_action_schema = DELEGATE_ACTION_SCHEMA
+        self.stock_system_prompt_hash = hashlib.sha256(
+            system_prompt.encode("utf-8")
+        ).hexdigest()
 
     def _prompt_with_delegation_schema(self, prompt: str) -> str:
         return (
@@ -135,3 +146,33 @@ class CausalOrchestrator(BaseAgent):
     def initialize(self, *args: Any, **kwargs: Any) -> None:
         self.refresh_delegation_prompt()
         super().initialize(*args, **kwargs)
+
+    def append_agent_log(self, log: Any) -> None:
+        """Index model-visible task, observation, notification, and artifact logs."""
+
+        super().append_agent_log(log)
+        log_type = log.get_type()
+        content = log.get_content_for_llm()
+        if content is None:
+            return
+        if log_type == "task":
+            self.context_registry.register("task", content)
+        elif log_type == "observation":
+            self.context_registry.register(f"observation:{log.id}", content)
+        elif log_type == "environment_notifications":
+            self.context_registry.register(f"notification:{log.id}", content)
+        elif log_type == "action":
+            self.context_registry.register(f"tool_result:{log.id}", content)
+        elif log_type == "subagent":
+            self.context_registry.register(f"artifact:{log.id}", content)
+
+    def step(self) -> None:
+        """Refresh the bounded delegation block immediately before each LLM call."""
+
+        prompt = self.refresh_delegation_prompt()
+        self.system_prompt = prompt
+        for log in self.logs:
+            if isinstance(log, SystemPromptLog):
+                log.content = prompt
+                break
+        super().step()

@@ -43,7 +43,10 @@ class SmokeContractTests(unittest.TestCase):
         smoke = load_smoke()
         calls = []
 
-        class Harness:
+        class Harness(smoke.Gaia2SmokeHarness):
+            def __init__(self):
+                pass
+
             def direct_action(self):
                 calls.append("direct")
                 return "direct-result"
@@ -65,9 +68,12 @@ class SmokeContractTests(unittest.TestCase):
                     {"event_type": "RUN_COMPLETED"},
                 ]
 
+            def close(self):
+                calls.append("close")
+
         execution = smoke.run_configured_smoke(Harness)
 
-        self.assertEqual(calls, ["direct", "delegation", "validation", "trace"])
+        self.assertEqual(calls, ["direct", "delegation", "validation", "trace", "close"])
         self.assertTrue(execution.native_success)
         self.assertEqual(execution.trace_event_names[0], "RUN_STARTED")
 

@@ -1,6 +1,8 @@
 import unittest
+import hashlib
 
 from are.simulation.agents.default_agent.are_simulation_main import ARESimulationAgent
+from are.simulation.agents.agent_log import TaskLog
 from are.simulation.agents.default_agent.tools.action_executor import ParsedAction
 from are.simulation.tool_utils import AppTool
 
@@ -182,6 +184,13 @@ class BuilderTests(unittest.TestCase):
         self.assertIs(built.pause_env.__self__, env)
         self.assertIs(built.resume_env.__self__, env)
         self.assertEqual(built.react_agent.tools, {})
+        stock_prompt = config.get_base_agent_config().system_prompt
+        self.assertTrue(stock_prompt.startswith("<general_instructions>"))
+        self.assertIn(stock_prompt, built.react_agent.init_system_prompts["system_prompt"])
+        self.assertEqual(
+            built.react_agent.stock_system_prompt_hash,
+            hashlib.sha256(stock_prompt.encode("utf-8")).hexdigest(),
+        )
 
         notification_system = type(
             "NotificationSystem",
@@ -211,6 +220,45 @@ class BuilderTests(unittest.TestCase):
         dynamic = gate_calls[0]["eligibility_context_provider"]()
         self.assertEqual(dynamic["available_context_refs"], ("task",))
         self.assertEqual(dynamic["allowed_worker_tools"], ("FileSystem__read_file",))
+
+    def test_orchestrator_registers_task_and_refreshes_prompt_at_each_step(self):
+        current = {"available_context_refs": (), "allowed_worker_tools": ()}
+        gate = type("Gate", (), {"handle_proposal": lambda self, _proposal: {}})()
+        executor = __import__(
+            "causal_orch.agent.action_executor", fromlist=["InterventionActionExecutor"]
+        ).InterventionActionExecutor(
+            intervention_gate=gate, trace_sink=InMemoryTraceSink()
+        )
+        prompts = []
+
+        def engine(messages, **_kwargs):
+            prompts.append(messages[0]["content"])
+            return (
+                'Thought: done\nAction: {"action":"missing","action_input":{}}',
+                {},
+            )
+
+        runtime = {}
+        orchestrator = CausalOrchestrator(
+            llm_engine=engine,
+            action_executor=executor,
+            eligibility_context_provider=lambda: {
+                **current,
+                "available_context_refs": tuple(
+                    getattr(runtime.get("orchestrator"), "context_registry", ())
+                ),
+            },
+            max_iterations=1,
+        )
+        runtime["orchestrator"] = orchestrator
+        orchestrator.initialize()
+        orchestrator.append_agent_log(
+            TaskLog(content="Inspect the task", timestamp=0, agent_id="test")
+        )
+        with self.assertRaises(Exception):
+            orchestrator.step()
+        self.assertIn("task", orchestrator.context_registry)
+        self.assertIn('"task"', prompts[0])
 
     def test_config_rejects_manifest_provider_mismatch(self):
         with self.assertRaises(ValueError):

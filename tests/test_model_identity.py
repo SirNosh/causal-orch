@@ -20,6 +20,7 @@ from causal_orch.models.openrouter_engine import (
     HTTPRequest,
     HTTPResponse,
     OpenRouterLLMEngine,
+    OpenRouterGenerationMetadataLookup,
     OpenRouterProtocolError,
     compute_backoff_delay,
 )
@@ -93,6 +94,19 @@ def engine(transport, **kwargs):
 
 
 class ModelIdentityTests(unittest.TestCase):
+    def test_api_key_wires_authenticated_generation_lookup_by_default(self):
+        configured = OpenRouterLLMEngine(
+            OpenRouterConfig(
+                MODEL_CANDIDATE_ORDER[0],
+                "PinnedProvider",
+                api_key="test-key",
+            ),
+            transport=FakeTransport(response()),
+        )
+        self.assertIsInstance(
+            configured.generation_metadata_lookup,
+            OpenRouterGenerationMetadataLookup,
+        )
     def test_manifest_order_hash_and_serialization_are_fixed(self):
         manifests = [manifest(slug) for slug in reversed(MODEL_CANDIDATE_ORDER)]
         self.assertEqual(MODEL_CANDIDATE_ORDER, (
@@ -191,6 +205,27 @@ class ModelIdentityTests(unittest.TestCase):
         self.assertEqual(text, "answer")
         self.assertEqual(metadata["trace_metadata"]["provider_identity_source"], "generation_metadata")
         self.assertEqual(seen, ["response-request"])
+
+    def test_generation_header_is_preferred_for_metadata_lookup(self):
+        body = response().body
+        body.pop("provider")
+        seen = []
+        lookup = lambda request_id: (
+            seen.append(request_id)
+            or {"data": {"provider_name": "PinnedProvider"}}
+        )
+        OpenRouterLLMEngine(
+            OpenRouterConfig(MODEL_CANDIDATE_ORDER[0], "PinnedProvider"),
+            transport=FakeTransport(
+                HTTPResponse(
+                    200,
+                    body,
+                    headers={"X-Generation-Id": "generation-id"},
+                )
+            ),
+            generation_metadata_lookup=lookup,
+        ).chat_completion([])
+        self.assertEqual(seen, ["generation-id"])
 
     def test_schema_and_trace_tags_are_sent_and_traced_without_credentials(self):
         sink = InMemoryTraceSink()

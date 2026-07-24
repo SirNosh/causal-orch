@@ -9,6 +9,9 @@ from typing import Any, Callable, Iterable, Mapping
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from are.simulation.agents.default_agent.base_agent import BaseAgent, TerminationStep
+from are.simulation.agents.default_agent.prompts.system_prompt import (
+    DEFAULT_ARE_SIMULATION_REACT_JSON_SYSTEM_PROMPT,
+)
 from are.simulation.agents.default_agent.tools.json_action_executor import JsonActionExecutor
 from are.simulation.tools import Tool
 
@@ -132,7 +135,14 @@ class _AuditableExecutableTool:
 class _TracedExecutableTool(Tool):
     """ARE ``Tool`` wrapper that preserves the selected callable and emits tool events."""
 
-    def __init__(self, tool: Any, public_name: str, trace_sink: Any, actor_id: str) -> None:
+    def __init__(
+        self,
+        tool: Any,
+        public_name: str,
+        trace_sink: Any,
+        actor_id: str,
+        evidence_refs: list[str],
+    ) -> None:
         self.name = public_name
         self.description = str(getattr(tool, "description", ""))
         self.inputs = _tool_inputs(tool)
@@ -140,6 +150,7 @@ class _TracedExecutableTool(Tool):
         self._tool = tool
         self._trace_sink = trace_sink
         self._actor_id = actor_id
+        self._evidence_refs = evidence_refs
         super().__init__()
 
     def _emit(self, event_type: EventName, **fields: Any) -> None:
@@ -168,11 +179,17 @@ class _TracedExecutableTool(Tool):
                 payload={"tool": self.name, "ok": False},
             )
             raise
-        self._emit(
-            EventName.WORKER_TOOL_RESULT,
+        result_event = OrchestrationEvent(
+            event_type=EventName.WORKER_TOOL_RESULT,
+            actor_id=self._actor_id,
+            actor_role="worker",
+            tool_refs=(self.name,),
             payload={"tool": self.name, "ok": True, "result": _safe_event_value(value)},
         )
-        return value
+        self._trace_sink.append(result_event)
+        evidence_ref = f"worker_tool_result:{result_event.event_id}"
+        self._evidence_refs.append(evidence_ref)
+        return {"value": value, "evidence_ref": evidence_ref}
 
 
 def _tool_inputs(tool: Any) -> dict[str, dict[str, Any]]:
@@ -321,18 +338,22 @@ def worker_prompt(payload: Mapping[str, Any]) -> str:
         "contradictions": ["string"],
         "recommended_next_action": "string | null",
     }
-    return "\n".join(
+    worker_instructions = "\n".join(
         (
             "You are a fresh, bounded read-only evidence worker.",
             f"Objective: {payload['objective']}",
             f"Completion criterion: {payload['completion_criterion']}",
             f"Selected context: {json.dumps(payload['context'], sort_keys=True)}",
             f"Permitted tools: {json.dumps(payload['permitted_tools'], sort_keys=True)}",
-            f"Evidence references must use these selected references: {json.dumps(payload['evidence_refs'])}",
+            f"Initial evidence references: {json.dumps(payload['evidence_refs'])}",
+            "Read-tool observations may add a worker_tool_result:<event_id> evidence reference; use that exact handle for information learned from the tool.",
             "Do not write, delete, update, send messages, contact the user, wait, control the environment, recurse, or delegate.",
-            f"Return exactly one validated artifact with this schema: {json.dumps(artifact_schema, sort_keys=True)}",
+            "Use ARE's required Thought / Action JSON format and call exactly one tool per action.",
+            "When finished, call return_artifact with one EvidenceReport. Do not provide the report as plain text.",
+            f"The return_artifact payload must match this schema: {json.dumps(artifact_schema, sort_keys=True)}",
         )
     )
+    return f"{DEFAULT_ARE_SIMULATION_REACT_JSON_SYSTEM_PROMPT}\n\n<worker_instructions>\n{worker_instructions}\n</worker_instructions>"
 
 
 class BaseAgentWorkerFactory:
@@ -535,6 +556,8 @@ class DelegationWorkerAdapter:
 
         value: Any = None
         failure: TreatmentFailure | None = None
+        evidence_refs = payload["evidence_refs"]
+        state_record_count = len(getattr(self.environment, "state_records", ()))
         self._emit(
             EventName.WORKER_STARTED,
             actor_id=worker_id,
@@ -547,7 +570,13 @@ class DelegationWorkerAdapter:
         with guard:
             try:
                 selected_tools = tuple(
-                    _TracedExecutableTool(tool, manifest.public_name, self.trace_sink, worker_id)
+                    _TracedExecutableTool(
+                        tool,
+                        manifest.public_name,
+                        self.trace_sink,
+                        worker_id,
+                        evidence_refs,
+                    )
                     if self.trace_sink is not None
                     else tool
                     for tool, manifest in zip(selection.tools, selection.selected_manifests)
@@ -563,14 +592,30 @@ class DelegationWorkerAdapter:
             except Exception as exc:
                 failure = TreatmentFailure(TreatmentFailureReason.RUNNER_ERROR, f"{type(exc).__name__}: {exc}")
 
+        attribution = _state_change_attribution(
+            self.environment, state_record_count, worker_id, guard.changed
+        )
         self._emit(
             EventName.WORKER_STATE_GUARD,
             actor_id=worker_id,
             state_before_hash=guard.before_hash,
             state_after_hash=guard.after_hash,
-            payload={"changed": guard.changed},
+            payload={"changed": guard.changed, "attribution": attribution},
         )
         if guard.changed:
+            self._emit(
+                EventName.STATE_CHANGED_DURING_WORKER,
+                actor_id=worker_id,
+                state_before_hash=guard.before_hash,
+                state_after_hash=guard.after_hash,
+                protocol_violation=(
+                    TreatmentFailureReason.STATE_DIFF_VIOLATION.value
+                    if attribution == "worker"
+                    else None
+                ),
+                payload={"attribution": attribution},
+            )
+        if guard.changed and attribution == "worker":
             failure = TreatmentFailure(
                 TreatmentFailureReason.STATE_DIFF_VIOLATION,
                 "application state changed during the worker attempt",
@@ -585,7 +630,11 @@ class DelegationWorkerAdapter:
                 )
             else:
                 try:
-                    value = FreshReadOnlyWorker._validate_artifact(value, payload["objective"])
+                    value = FreshReadOnlyWorker._validate_artifact(
+                        value,
+                        payload["objective"],
+                        allowed_evidence_refs=set(evidence_refs),
+                    )
                 except (ValidationError, TypeError, ValueError) as exc:
                     failure = TreatmentFailure(TreatmentFailureReason.MALFORMED_ARTIFACT, str(exc))
         result = WorkerResult(value if isinstance(value, EvidenceReport) and failure is None else None, failure, guard, payload).to_dict()
@@ -640,7 +689,12 @@ class FreshReadOnlyWorker:
         }
 
     @staticmethod
-    def _validate_artifact(value: Any, objective: str) -> EvidenceReport:
+    def _validate_artifact(
+        value: Any,
+        objective: str,
+        *,
+        allowed_evidence_refs: set[str] | None = None,
+    ) -> EvidenceReport:
         if isinstance(value, EvidenceReport):
             artifact = value
         elif isinstance(value, Mapping):
@@ -649,6 +703,17 @@ class FreshReadOnlyWorker:
             raise ValidationError("worker returned a non-mapping artifact")
         if artifact.objective != objective:
             raise ValidationError("worker artifact objective does not match the request")
+        if allowed_evidence_refs is not None:
+            cited = {
+                ref
+                for finding in artifact.findings
+                for ref in finding.evidence_refs
+            }
+            unknown = cited - allowed_evidence_refs
+            if unknown:
+                raise ValidationError(
+                    f"worker artifact cites unknown evidence references: {sorted(unknown)}"
+                )
         return artifact
 
     def run(
@@ -678,12 +743,7 @@ class FreshReadOnlyWorker:
             except Exception as exc:  # Runner failures are observable treatment outcomes.
                 failure = TreatmentFailure(TreatmentFailureReason.RUNNER_ERROR, f"{type(exc).__name__}: {exc}")
 
-        if guard.changed:
-            failure = TreatmentFailure(
-                TreatmentFailureReason.STATE_DIFF_VIOLATION,
-                "application state changed during the worker attempt",
-            )
-        elif failure is None:
+        if failure is None:
             if isinstance(value, BudgetExceededResult) or (
                 isinstance(value, Mapping) and value.get("status") == "BUDGET_EXCEEDED"
             ):
@@ -697,3 +757,28 @@ class FreshReadOnlyWorker:
                 except (ValidationError, TypeError, ValueError) as exc:
                     failure = TreatmentFailure(TreatmentFailureReason.MALFORMED_ARTIFACT, str(exc))
         return WorkerResult(value if isinstance(value, EvidenceReport) and failure is None else None, failure, guard, payload)
+
+
+def _state_change_attribution(
+    environment: Any,
+    starting_record_count: int,
+    worker_id: str,
+    changed: bool,
+) -> str:
+    """Attribute observed changes only from explicit instrumented provenance."""
+
+    if not changed:
+        return "none"
+    records = tuple(getattr(environment, "state_records", ()))[starting_record_count:]
+    for record in records:
+        if not getattr(record, "state_changed", False):
+            continue
+        if (
+            getattr(record, "actor_role", None) == "worker"
+            or getattr(record, "provenance", None) == "worker"
+            or getattr(record, "actor_id", None) == worker_id
+        ):
+            return "worker"
+    if any(getattr(record, "state_changed", False) for record in records):
+        return "environment"
+    return "unknown"

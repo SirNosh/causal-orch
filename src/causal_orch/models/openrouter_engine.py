@@ -10,6 +10,7 @@ import random
 import time
 from typing import Any, Callable, Mapping, Protocol
 import urllib.error
+import urllib.parse
 import urllib.request
 from uuid import uuid4
 
@@ -99,6 +100,50 @@ class UrllibTransport:
             )
 
 
+class OpenRouterGenerationMetadataLookup:
+    """Authenticated GET lookup for OpenRouter's authoritative generation record."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        endpoint: str = "https://openrouter.ai/api/v1/generation",
+        timeout_seconds: float = 60.0,
+        attribution_headers: Mapping[str, str] | None = None,
+    ) -> None:
+        if not api_key:
+            raise ValueError("api_key is required for generation metadata lookup")
+        self.api_key = api_key
+        self.endpoint = endpoint
+        self.timeout_seconds = timeout_seconds
+        self.attribution_headers = dict(attribution_headers or {})
+
+    def __call__(self, request_id: str) -> HTTPResponse:
+        query = urllib.parse.urlencode({"id": request_id})
+        request = urllib.request.Request(
+            f"{self.endpoint}?{query}",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Accept": "application/json",
+                **self.attribution_headers,
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                return HTTPResponse(
+                    status_code=response.status,
+                    headers=dict(response.headers.items()),
+                    body=response.read(),
+                )
+        except urllib.error.HTTPError as error:
+            return HTTPResponse(
+                status_code=error.code,
+                headers=dict(error.headers.items()) if error.headers else {},
+                body=error.read(),
+            )
+
+
 def compute_backoff_delay(
     retry_index: int,
     *,
@@ -175,6 +220,18 @@ def _response_headers(response: Any) -> Mapping[str, str]:
     if isinstance(response, HTTPResponse):
         return response.headers
     return getattr(response, "headers", {}) or {}
+
+
+def _header(headers: Mapping[str, str], name: str) -> str | None:
+    expected = name.lower()
+    return next(
+        (
+            value
+            for key, value in headers.items()
+            if str(key).lower() == expected and isinstance(value, str) and value
+        ),
+        None,
+    )
 
 
 def _safe_metadata(value: Any) -> Any:
@@ -284,6 +341,12 @@ class OpenRouterLLMEngine(LLMEngine):
         self.backoff = backoff or BackoffPolicy()
         self.correlation_id_factory = correlation_id_factory or (lambda: uuid4().hex)
         self.generation_metadata_lookup = generation_metadata_lookup
+        if self.generation_metadata_lookup is None and config.api_key:
+            self.generation_metadata_lookup = OpenRouterGenerationMetadataLookup(
+                api_key=config.api_key,
+                timeout_seconds=timeout_seconds,
+                attribution_headers=config.attribution_headers,
+            )
 
     def _payload(
         self,
@@ -347,6 +410,8 @@ class OpenRouterLLMEngine(LLMEngine):
             return None, {}
         try:
             result = self.generation_metadata_lookup(request_id)
+            if _response_status(result) != 200:
+                return None, {}
             body = _json_body(result)
         except Exception:
             return None, {}
@@ -480,7 +545,12 @@ class OpenRouterLLMEngine(LLMEngine):
                 request_id=body.get("id", correlation_id),
             )
         response_headers = _response_headers(response)
-        request_id = body.get("id") or response_headers.get("x-request-id") or correlation_id
+        request_id = (
+            _header(response_headers, "x-generation-id")
+            or body.get("id")
+            or _header(response_headers, "x-request-id")
+            or correlation_id
+        )
         provider = self._provider_name(body.get("provider") or body.get("provider_name"))
         provider_source = "response"
         generation_metadata: Mapping[str, Any] = {}

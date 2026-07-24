@@ -152,6 +152,160 @@ class AssignmentManifest:
 
 
 @dataclass(frozen=True)
+class BlockAssignmentManifest:
+    """One immutable balanced allocation for every planned run in a block."""
+
+    model_slug: str
+    capability: str
+    scenario_id: str
+    temporal_batch: str | int
+    seed: str | int
+    run_assignments: tuple[tuple[str, TreatmentAssignment], ...]
+    block_key: str = ""
+    manifest_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.run_assignments:
+            raise ValueError("run_assignments must not be empty")
+        run_ids = [run_id for run_id, _assignment in self.run_assignments]
+        if any(not isinstance(run_id, str) or not run_id for run_id in run_ids):
+            raise ValueError("run IDs must be non-empty strings")
+        if len(set(run_ids)) != len(run_ids):
+            raise ValueError("run IDs must be unique within a block")
+        normalized = tuple(
+            (run_id, TreatmentAssignment(assignment))
+            for run_id, assignment in self.run_assignments
+        )
+        object.__setattr__(self, "run_assignments", normalized)
+        derived = derive_block_key(
+            self.model_slug, self.capability, self.scenario_id, self.temporal_batch
+        )
+        if self.block_key and self.block_key != derived:
+            raise ValueError("block_key does not match the block stratum")
+        object.__setattr__(self, "block_key", derived)
+        computed = hashlib.sha256(
+            json.dumps(
+                self.to_dict(include_hash=False),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        if self.manifest_sha256 and self.manifest_sha256 != computed:
+            raise ValueError("manifest_sha256 does not match the block manifest")
+        object.__setattr__(self, "manifest_sha256", computed)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        run_ids: Iterable[str],
+        model_slug: str,
+        capability: str,
+        scenario_id: str,
+        temporal_batch: str | int,
+        seed: str | int,
+    ) -> "BlockAssignmentManifest":
+        ids = tuple(run_ids)
+        assignments = [TreatmentAssignment.EXECUTE] * (len(ids) // 2)
+        assignments.extend(
+            [TreatmentAssignment.SUPPRESS] * (len(ids) - len(assignments))
+        )
+        block_key = derive_block_key(
+            model_slug, capability, scenario_id, temporal_batch
+        )
+        _shuffle(assignments, str(seed), block_key)
+        return cls(
+            model_slug,
+            capability,
+            scenario_id,
+            temporal_batch,
+            seed,
+            tuple(zip(ids, assignments)),
+        )
+
+    def assignment_for(self, run_id: str) -> TreatmentAssignment:
+        try:
+            return dict(self.run_assignments)[run_id]
+        except KeyError as error:
+            raise KeyError(f"run ID is not preallocated in this block: {run_id}") from error
+
+    def schedule_for(self, run_id: str) -> "PreallocatedRunSchedule":
+        return PreallocatedRunSchedule(self, run_id)
+
+    def to_dict(self, *, include_hash: bool = True) -> dict[str, object]:
+        result: dict[str, object] = {
+            "model_slug": self.model_slug,
+            "capability": self.capability,
+            "scenario_id": self.scenario_id,
+            "temporal_batch": self.temporal_batch,
+            "seed": self.seed,
+            "block_key": self.block_key,
+            "run_assignments": [
+                {"run_id": run_id, "assignment": assignment.label}
+                for run_id, assignment in self.run_assignments
+            ],
+        }
+        if include_hash:
+            result["manifest_sha256"] = self.manifest_sha256
+        return result
+
+    def persist(self, path: str | Path) -> None:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(
+            self.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        )
+        with _commitment_lock(target):
+            if target.exists() and target.read_text(encoding="utf-8").strip() != payload:
+                raise ValueError("block assignment manifest already differs")
+            if not target.exists():
+                temporary = target.with_name(target.name + ".tmp")
+                temporary.write_text(payload + "\n", encoding="utf-8")
+                temporary.replace(target)
+
+
+@dataclass
+class PreallocatedRunSchedule:
+    """Eligibility-gated view of one preallocated run assignment."""
+
+    manifest: BlockAssignmentManifest
+    run_id: str
+
+    def __post_init__(self) -> None:
+        self._assignment = self.manifest.assignment_for(self.run_id)
+        self._records: list[AssignmentRecord] = []
+
+    def reveal(
+        self, block_key: Hashable, *, eligible: bool
+    ) -> TreatmentAssignment | None:
+        if not eligible:
+            return None
+        if block_key != self.manifest.block_key:
+            raise KeyError(f"unknown randomization block: {block_key!r}")
+        if self._records:
+            raise IndexError("run assignment already consumed")
+        self._records.append(
+            AssignmentRecord(
+                block_key=block_key,
+                position=self.run_id,
+                assignment=self._assignment,
+                manifest_sha256=self.manifest.manifest_sha256,
+                run_id=self.run_id,
+            )
+        )
+        return self._assignment
+
+    @property
+    def consumed_count(self) -> int:
+        return len(self._records)
+
+    @property
+    def records(self) -> tuple["AssignmentRecord", ...]:
+        return tuple(self._records)
+
+
+@dataclass(frozen=True)
 class AssignmentRecord:
     block_key: Hashable
     position: int | str

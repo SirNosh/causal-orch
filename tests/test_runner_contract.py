@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 from causal_orch.runner.scenario_runner import CausalScenarioRunner
 from causal_orch.tracing.events import EventName, OrchestrationEvent
@@ -61,6 +62,15 @@ class FakeAgentBuilder:
 
 
 class RunnerTests(unittest.TestCase):
+    def test_causal_experiment_runner_requires_block_manifest(self):
+        with self.assertRaisesRegex(ValueError, "BlockAssignmentManifest"):
+            CausalScenarioRunner(
+                scenario_factory=lambda: None,
+                environment_factory=lambda: None,
+                agent_config_builder=object(),
+                agent_builder=SimpleNamespace(experiment_config=object()),
+            )
+
     def test_stock_sequence_and_fresh_objects_are_preserved_per_run(self):
         events = []
         scenarios = []

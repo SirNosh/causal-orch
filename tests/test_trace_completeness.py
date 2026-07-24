@@ -20,7 +20,7 @@ CHAIN = [
 
 
 class TraceTests(unittest.TestCase):
-    def test_sink_context_adds_identity_sequence_timestamp_and_causal_parent(self) -> None:
+    def test_sink_context_adds_identity_sequence_timestamp_and_previous_event(self) -> None:
         context = RunContext(
             run_id="run-1",
             scenario_id="scenario-1",
@@ -45,7 +45,8 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(first.wall_timestamp, "2026-07-23T00:00:00+00:00")
         self.assertEqual(first.correlation_id, "corr-1")
         self.assertEqual(second.event_sequence, 2)
-        self.assertEqual(second.causal_parent_ids, ("first",))
+        self.assertEqual(second.previous_event_id, "first")
+        self.assertEqual(second.causal_parent_ids, ())
         self.assertEqual(second.randomization_block_key, "block-1")
 
     def test_ordering_and_json_serialization(self) -> None:

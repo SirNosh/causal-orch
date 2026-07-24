@@ -22,6 +22,7 @@ from causal_orch.runtime.read_only_tools import (
     select_read_only_tools,
 )
 from causal_orch.runtime.state_guard import StateGuard, canonical_hash, canonical_json
+from causal_orch.runtime.state_guard import StateEventRecord
 from causal_orch.tracing.events import EventName
 from causal_orch.tracing.sink import InMemoryTraceSink
 from are.simulation.types import SimulatedGenerationTimeConfig
@@ -40,13 +41,13 @@ def safe_tool(name="safe_read", **overrides):
     return values
 
 
-def artifact(objective="Find the record."):
+def artifact(objective="Find the record.", evidence_ref="task"):
     return {
         "artifact_type": "EVIDENCE_REPORT",
         "objective": objective,
         "status": "COMPLETE",
         "findings": [
-            {"claim": "The record exists.", "evidence_refs": ["safe_read"], "confidence": "HIGH"}
+            {"claim": "The record exists.", "evidence_refs": [evidence_ref], "confidence": "HIGH"}
         ],
         "uncertainties": [],
         "contradictions": [],
@@ -193,7 +194,7 @@ class WorkerReadOnlyTests(unittest.TestCase):
                 EventName.ORCHESTRATOR_RESUMED,
             ],
         )
-        self.assertTrue(all(event.causal_parent_ids for event in sink.events[1:]))
+        self.assertTrue(all(event.previous_event_id for event in sink.events[1:]))
 
     def test_default_base_agent_worker_budget_exhaustion_is_not_malformed(self):
         proposal = {
@@ -222,6 +223,99 @@ class WorkerReadOnlyTests(unittest.TestCase):
             result["failure"]["reason"],
             TreatmentFailureReason.TIMEOUT_OR_BUDGET_EXHAUSTION.value,
         )
+
+    def test_environment_event_during_worker_is_logged_but_not_a_worker_violation(self):
+        class Environment:
+            def __init__(self):
+                self.apps = {"record": 1}
+                self.records = []
+
+            def get_apps_state(self):
+                return self.apps
+
+            @property
+            def state_records(self):
+                return tuple(self.records)
+
+        environment = Environment()
+
+        def eventful_worker(_payload, _tools):
+            before = canonical_hash(environment.apps)
+            environment.apps["record"] = 2
+            environment.records.append(
+                StateEventRecord(
+                    event_id="scheduled",
+                    event_type="ScheduledEvent",
+                    actor_role="environment",
+                    provenance="environment",
+                    state_before_hash=before,
+                    state_after_hash=canonical_hash(environment.apps),
+                )
+            )
+            return artifact()
+
+        result = DelegationWorkerAdapter(
+            environment=environment,
+            available_tools=(),
+            context_resolver={"task": {"case": "42"}},
+            worker_runner=eventful_worker,
+            trace_sink=InMemoryTraceSink(),
+        )(
+            {
+                "objective": "Find the record.",
+                "reason_code": "INFORMATION_GAP",
+                "context_refs": ["task"],
+                "allowed_read_tools": [],
+                "completion_criterion": "Name the record.",
+                "max_worker_steps": 2,
+                "max_worker_output_tokens": 20,
+            }
+        )
+        self.assertEqual(result["status"], "WORKER_COMPLETED")
+        self.assertTrue(result["state_guard"]["changed"])
+
+    def test_worker_tool_result_handle_is_returned_and_accepted_as_evidence(self):
+        class ReadTool:
+            public_name = "FileSystem__read_file"
+            app_name = "FileSystem"
+            function_name = "read_file"
+            write_operation = False
+            description = "Read a file."
+            argument_schema = {"type": "object"}
+
+            def __call__(self):
+                return "record-42"
+
+        def worker(payload, tools):
+            observation = tools[0]()
+            self.assertEqual(observation["value"], "record-42")
+            self.assertTrue(
+                observation["evidence_ref"].startswith("worker_tool_result:")
+            )
+            return artifact(
+                payload["objective"], evidence_ref=observation["evidence_ref"]
+            )
+
+        result = DelegationWorkerAdapter(
+            environment={"apps": {}},
+            available_tools=(ReadTool(),),
+            context_resolver={"task": "Find the record"},
+            worker_runner=worker,
+            trace_sink=InMemoryTraceSink(),
+        )(
+            {
+                "objective": "Find the record.",
+                "reason_code": "INFORMATION_GAP",
+                "context_refs": ["task"],
+                "allowed_read_tools": ["FileSystem__read_file"],
+                "completion_criterion": "Name the record.",
+                "max_worker_steps": 2,
+                "max_worker_output_tokens": 20,
+            }
+        )
+        self.assertEqual(result["status"], "WORKER_COMPLETED")
+        cited = result["artifact"]["findings"][0]["evidence_refs"][0]
+        self.assertTrue(cited.startswith("worker_tool_result:"))
 
     def test_unknown_none_and_write_tools_are_rejected(self):
         tools = [
@@ -341,7 +435,8 @@ class WorkerReadOnlyTests(unittest.TestCase):
         changed = FreshReadOnlyWorker(
             environment=base, available_tools=(safe_tool(),), runner=mutate, audited_allowlist={"safe_read"}
         ).run(objective="Find the record.", context={}, requested_tools=["safe_read"], budgets={"max_steps": 1, "max_output_tokens": 1})
-        self.assertEqual(changed.failure.reason, TreatmentFailureReason.STATE_DIFF_VIOLATION)
+        self.assertTrue(changed.succeeded)
+        self.assertTrue(changed.state_guard.changed)
 
 
 if __name__ == "__main__":

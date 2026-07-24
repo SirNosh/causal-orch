@@ -23,7 +23,8 @@ class RuntimeContextTests(unittest.TestCase):
         sink.append(OrchestrationEvent(event_type=EventName.PROPOSAL_VALIDATION, event_id="validation"))
 
         self.assertEqual(sink.events[0].scenario_id, "scenario")
-        self.assertEqual(sink.events[1].causal_parent_ids, ("proposal",))
+        self.assertEqual(sink.events[1].previous_event_id, "proposal")
+        self.assertEqual(sink.events[1].causal_parent_ids, ())
         self.assertEqual([event.event_sequence for event in sink.events], [1, 2])
 
 

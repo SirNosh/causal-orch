@@ -53,12 +53,11 @@ class TraceSink:
 
     def _enrich(self, event: OrchestrationEvent) -> OrchestrationEvent:
         context = self._context
-        parent_ids = event.causal_parent_ids or ((self._last_event_id,) if self._last_event_id else ())
         self._sequence += 1
         fields = {
             "event_sequence": self._sequence,
             "correlation_id": event.correlation_id or (context.correlation_id if context else None),
-            "causal_parent_ids": parent_ids,
+            "previous_event_id": event.previous_event_id or self._last_event_id,
             "wall_timestamp": event.wall_timestamp if event.wall_timestamp is not None else self._wall_clock(),
         }
         if context is not None:
@@ -137,12 +136,11 @@ class InMemoryTraceSink:
 
     def _enrich(self, event: OrchestrationEvent) -> OrchestrationEvent:
         context = self._context
-        parent_ids = event.causal_parent_ids or ((self._last_event_id,) if self._last_event_id else ())
         self._sequence += 1
         fields = {
             "event_sequence": self._sequence,
             "correlation_id": event.correlation_id or (context.correlation_id if context else None),
-            "causal_parent_ids": parent_ids,
+            "previous_event_id": event.previous_event_id or self._last_event_id,
             "wall_timestamp": event.wall_timestamp if event.wall_timestamp is not None else self._wall_clock(),
         }
         if context is not None:

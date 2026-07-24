@@ -185,6 +185,7 @@ class CausalAgentBuilder(AbstractAgentBuilder):
         base_agent = CausalOrchestrator(
             llm_engine=llm_engine,
             action_executor=executor,
+            system_prompt=str(base_config.system_prompt),
             max_iterations=max_iterations,
             time_manager=env.time_manager,
             log_callback=env.append_to_world_logs,

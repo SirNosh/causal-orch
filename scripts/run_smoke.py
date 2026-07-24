@@ -51,6 +51,107 @@ class SmokePrerequisiteError(ValueError):
 SmokeRunner = Callable[[SmokeStep], Any]
 
 
+class Gaia2SmokeHarness:
+    """Concrete pinned-ARE harness for one local Gaia2 scenario JSON."""
+
+    def __init__(
+        self,
+        *,
+        scenario_path: str | Path,
+        agent_builder: Any,
+        agent_config_builder: Any,
+        direct_tool_name: str,
+        direct_tool_arguments: Mapping[str, Any],
+        delegation_proposal: Mapping[str, Any],
+        environment_factory: Callable[[], Any] | None = None,
+    ) -> None:
+        self.scenario_path = Path(scenario_path)
+        self.agent_builder = agent_builder
+        self.agent_config_builder = agent_config_builder
+        self.direct_tool_name = direct_tool_name
+        self.direct_tool_arguments = dict(direct_tool_arguments)
+        self.delegation_proposal = dict(delegation_proposal)
+        self.environment_factory = environment_factory
+        self._started = False
+
+    def _emit(self, event_type: str, **fields: Any) -> None:
+        from causal_orch.tracing.events import OrchestrationEvent
+
+        sink = self.agent_builder.trace_sink
+        sink.append(OrchestrationEvent(event_type=event_type, **fields))
+
+    def _start(self) -> None:
+        if self._started:
+            return
+        from are.simulation.environment import Environment
+        from are.simulation.scenarios.utils.load_utils import load_scenario
+
+        self.scenario = load_scenario(str(self.scenario_path))
+        self.environment = (
+            self.environment_factory()
+            if self.environment_factory is not None
+            else Environment()
+        )
+        self.scenario.initialize()
+        self.environment.run(self.scenario, wait_for_end=False)
+        config = self.agent_config_builder.build()
+        self.agent = self.agent_builder.build(config, env=self.environment)
+        self.agent.prepare_are_simulation_run(
+            self.scenario,
+            notification_system=getattr(self.environment, "notification_system", None),
+        )
+        self.agent.react_agent.initialize()
+        self._emit("RUN_STARTED")
+        self._started = True
+
+    def direct_action(self) -> Any:
+        from are.simulation.agents.default_agent.tools.action_executor import ParsedAction
+
+        self._start()
+        result = self.agent.react_agent.action_executor.execute_parsed_action(
+            ParsedAction(
+                tool_name=self.direct_tool_name,
+                arguments=self.direct_tool_arguments,
+            ),
+            self.agent.react_agent.append_agent_log,
+            self.agent.react_agent.make_timestamp,
+            self.agent.react_agent.agent_id,
+        )
+        self._emit(
+            "DIRECT_ACTION",
+            proposed_action=self.direct_tool_name,
+            executed_action=self.direct_tool_name,
+        )
+        return result
+
+    def forced_mock_delegation(self) -> Any:
+        from are.simulation.agents.default_agent.tools.action_executor import ParsedAction
+
+        self._start()
+        return self.agent.react_agent.action_executor.execute_parsed_action(
+            ParsedAction(tool_name="DELEGATE", arguments=self.delegation_proposal),
+            self.agent.react_agent.append_agent_log,
+            self.agent.react_agent.make_timestamp,
+            self.agent.react_agent.agent_id,
+        )
+
+    def native_validation(self) -> Any:
+        self._start()
+        result = self.scenario.validate(self.environment)
+        self._emit("RUN_COMPLETED", payload={"native_success": _native_success(result)})
+        return result
+
+    def trace_events(self) -> tuple[Any, ...]:
+        return tuple(self.agent_builder.trace_sink.events)
+
+    def close(self) -> None:
+        if not self._started:
+            return
+        self.agent.stop()
+        self.environment.stop()
+        self._started = False
+
+
 def build_smoke_plan(
     checks: Sequence[str] = (),
     *,
@@ -189,14 +290,27 @@ def _native_success(value: Any) -> bool:
 
 
 def run_configured_smoke(scenario_factory: Callable[[], Any]) -> SmokeExecution:
-    """Execute the injected direct/delegation/native-validation smoke contract."""
+    """Execute one concrete Gaia2/ARE smoke harness."""
 
     harness = scenario_factory()
-    direct = _contract_callable(harness, "direct_action")()
-    delegated = _contract_callable(harness, "forced_mock_delegation")()
-    validation = _contract_callable(harness, "native_validation")()
-    events = _contract_callable(harness, "trace_events")()
-    return SmokeExecution(direct, delegated, validation, _native_success(validation), check_trace_completeness(events))
+    if not isinstance(harness, Gaia2SmokeHarness):
+        raise SmokePrerequisiteError(
+            "scenario factory must return Gaia2SmokeHarness"
+        )
+    try:
+        direct = harness.direct_action()
+        delegated = harness.forced_mock_delegation()
+        validation = harness.native_validation()
+        events = harness.trace_events()
+        return SmokeExecution(
+            direct,
+            delegated,
+            validation,
+            _native_success(validation),
+            check_trace_completeness(events),
+        )
+    finally:
+        harness.close()
 
 
 def main(argv: Sequence[str] | None = None) -> int:

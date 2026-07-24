@@ -15,6 +15,7 @@ class EventName(str, Enum):
     MODEL_MANIFEST_LOCKED = "MODEL_MANIFEST_LOCKED"
     MODEL_REQUEST = "MODEL_REQUEST"
     MODEL_RESPONSE = "MODEL_RESPONSE"
+    DIRECT_ACTION = "DIRECT_ACTION"
     ORCHESTRATOR_PROPOSAL = "ORCHESTRATOR_PROPOSAL"
     PROPOSAL_VALIDATION = "PROPOSAL_VALIDATION"
     INTERVENTION_ELIGIBILITY = "INTERVENTION_ELIGIBILITY"
@@ -26,6 +27,7 @@ class EventName(str, Enum):
     WORKER_TOOL_RESULT = "WORKER_TOOL_RESULT"
     WORKER_ARTIFACT = "WORKER_ARTIFACT"
     WORKER_STATE_GUARD = "WORKER_STATE_GUARD"
+    STATE_CHANGED_DURING_WORKER = "STATE_CHANGED_DURING_WORKER"
     ORCHESTRATOR_RESUMED = "ORCHESTRATOR_RESUMED"
     PROVIDER_RATE_LIMIT = "PROVIDER_RATE_LIMIT"
     PROVIDER_OUTAGE = "PROVIDER_OUTAGE"
@@ -74,6 +76,7 @@ class OrchestrationEvent:
     event_id: str = field(default_factory=lambda: uuid4().hex)
     event_sequence: int | None = None
     correlation_id: str | None = None
+    previous_event_id: str | None = None
     causal_parent_ids: tuple[str, ...] = field(default_factory=tuple)
     actor_id: str | None = None
     actor_role: str | None = None
@@ -152,6 +155,7 @@ class OrchestrationEvent:
             "event_id": self.event_id,
             "event_sequence": self.event_sequence,
             "correlation_id": self.correlation_id,
+            "previous_event_id": self.previous_event_id,
             "causal_parent_ids": list(self.causal_parent_ids),
             "actor_id": self.actor_id,
             "actor_role": self.actor_role,

@@ -10,6 +10,9 @@ from are.simulation.agents.are_simulation_agent_config import (
     LLMEngineConfig,
     RunnableARESimulationAgentConfig,
 )
+from are.simulation.agents.default_agent.prompts.system_prompt import (
+    DEFAULT_ARE_SIMULATION_REACT_JSON_SYSTEM_PROMPT,
+)
 from are.simulation.types import SimulatedGenerationTimeConfig
 
 from causal_orch.models.manifests import (
@@ -93,6 +96,7 @@ class CausalAgentConfig(RunnableARESimulationAgentConfig):
     max_turns: int | None = None
     agent_name: str = CAUSAL_AGENT_NAME
     model_config: OpenRouterConfig | None = None
+    system_prompt: str = DEFAULT_ARE_SIMULATION_REACT_JSON_SYSTEM_PROMPT
     simulated_generation_time_config: SimulatedGenerationTimeConfig = field(
         default_factory=lambda: SimulatedGenerationTimeConfig(
             mode="fixed", seconds=FIXED_GENERATION_SECONDS
@@ -126,6 +130,8 @@ class CausalAgentConfig(RunnableARESimulationAgentConfig):
                 endpoint=llm_config.endpoint if llm_config else None,
             ),
             simulated_generation_time_config=self.simulated_generation_time_config,
+            system_prompt=self.system_prompt,
+            max_iterations=self.max_iterations,
         )
 
     def get_model_dump(self) -> dict[str, Any]:
@@ -136,6 +142,7 @@ class CausalAgentConfig(RunnableARESimulationAgentConfig):
             "model_config": (
                 self.model_config.model_slug if self.model_config is not None else None
             ),
+            "system_prompt": self.system_prompt,
             "simulated_generation_time_config": {
                 "mode": self.simulated_generation_time_config.mode,
                 "seconds": self.simulated_generation_time_config.seconds,
@@ -163,6 +170,7 @@ class CausalAgentConfig(RunnableARESimulationAgentConfig):
             max_iterations=agent_config_dict.get("max_iterations", self.max_iterations),
             max_turns=agent_config_dict.get("max_turns", self.max_turns),
             model_config=self.model_config,
+            system_prompt=agent_config_dict.get("system_prompt", self.system_prompt),
             simulated_generation_time_config=self.simulated_generation_time_config,
         )
 
@@ -191,4 +199,3 @@ class CausalAgentConfigBuilder:
                 self.experiment_config.simulated_generation_time_config
             ),
         )
-
