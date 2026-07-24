@@ -156,6 +156,19 @@ class ModelIdentityTests(unittest.TestCase):
         })
         self.assertTrue(transport.requests[0].headers["X-Request-ID"])
 
+    def test_payload_routes_by_slug_and_verifies_provider_name(self):
+        transport = FakeTransport(response())
+        config = OpenRouterConfig(
+            MODEL_CANDIDATE_ORDER[0],
+            "PinnedProvider",
+            routing_provider_slug="pinned-provider",
+        )
+        OpenRouterLLMEngine(config, transport=transport).chat_completion([])
+        self.assertEqual(
+            transport.requests[0].json_body["provider"]["only"],
+            ["pinned-provider"],
+        )
+
     def test_reasoning_and_attribution_are_optional_configured_fields(self):
         transport = FakeTransport(response())
         config = OpenRouterConfig(

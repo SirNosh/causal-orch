@@ -1,6 +1,7 @@
 provider_api: openrouter
 catalog_endpoint: https://openrouter.ai/api/v1/models
-pinned_provider: ""
+pinned_provider: Darkbloom
+routing_provider_slug: darkbloom
 allow_fallbacks: false
 require_parameters: true
-provider_manifest_sha256: ""
+provider_manifest_sha256: 36a50ce44682077b950940317218e654f3aff2f7bbb7f5fd208f9a7fe9ace510

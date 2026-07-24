@@ -381,7 +381,7 @@ class OpenRouterLLMEngine(LLMEngine):
             "messages": messages,
             **self.config.sampling.to_dict(),
             "provider": {
-                "only": [self.config.provider],
+                "only": [self.config.provider_route],
                 "allow_fallbacks": False,
                 "require_parameters": True,
             },

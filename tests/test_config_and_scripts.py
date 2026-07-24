@@ -46,19 +46,22 @@ def _manifest(slug: str) -> dict:
 
 
 class ConfigAndScriptTests(unittest.TestCase):
-    def test_configs_lock_values_and_pin_gaia2_while_provider_remains_unresolved(self):
+    def test_configs_lock_values_and_pin_gaia2_and_openrouter_provider(self):
         experiment = yaml.safe_load((ROOT / "configs/experiment.yaml").read_text())
         models = yaml.safe_load((ROOT / "configs/models.yaml").read_text())
         providers = yaml.safe_load((ROOT / "configs/providers.yaml").read_text())
         randomization = yaml.safe_load((ROOT / "configs/randomization.yaml").read_text())
         gaia = json.loads((ROOT / "configs/gaia2_manifest.json").read_text())
+        openrouter = json.loads((ROOT / "configs/openrouter_manifest.json").read_text())
         self.assertEqual(experiment["protocol"]["are_commit"], "7946367413129784139e785ae4c351090002a0bb")
         self.assertEqual(experiment["protocol"]["fixed_generation_seconds"], 5)
         self.assertEqual(models["candidate_order"], list(MODEL_CANDIDATE_ORDER))
         self.assertFalse(providers["allow_fallbacks"])
         self.assertEqual(randomization["assignment"]["ratio"], "50/50")
         self.assertTrue(randomization["seed"])
-        self.assertEqual(providers["pinned_provider"], "")
+        self.assertEqual(providers["pinned_provider"], "Darkbloom")
+        self.assertEqual(providers["routing_provider_slug"], "darkbloom")
+        self.assertEqual(models["selection"]["selected_model"], MODEL_CANDIDATE_ORDER[0])
         self.assertEqual(gaia["gaia2_revision"], "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99")
         self.assertEqual(gaia["scenario_ids"], ["scenario_universe_28_2nr5po"])
         self.assertEqual(gaia["row_count"], 160)
@@ -72,7 +75,29 @@ class ConfigAndScriptTests(unittest.TestCase):
             json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
         ).hexdigest()
         self.assertEqual(gaia["manifest_sha256"], expected_manifest_hash)
-        self.assertEqual(experiment["manifests"]["model_sha256"], {})
+        self.assertEqual(experiment["protocol"]["gaia2_revision"], gaia["gaia2_revision"])
+        self.assertEqual(experiment["protocol"]["scenario_ids"], gaia["scenario_ids"])
+        model_manifest = ModelManifest.from_dict(openrouter["model_manifest"])
+        self.assertEqual(
+            models["candidates"][0]["manifest_sha256"],
+            model_manifest.manifest_sha256,
+        )
+        self.assertEqual(
+            experiment["manifests"]["model_sha256"][MODEL_CANDIDATE_ORDER[0]],
+            model_manifest.manifest_sha256,
+        )
+        provider_hash = hashlib.sha256(
+            json.dumps(
+                openrouter["provider_manifest"],
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+        self.assertEqual(providers["provider_manifest_sha256"], provider_hash)
+        self.assertEqual(openrouter["provider_manifest_sha256"], provider_hash)
+        self.assertEqual(experiment["manifests"]["provider_sha256"], provider_hash)
+        self.assertEqual(experiment["manifests"]["gaia2_sha256"], gaia["manifest_sha256"])
 
     def test_scripts_import_without_side_effects(self):
         for name in (

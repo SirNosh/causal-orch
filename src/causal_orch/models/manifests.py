@@ -98,6 +98,7 @@ class OpenRouterConfig:
 
     model_slug: str
     provider: str
+    routing_provider_slug: str | None = None
     sampling: SamplingConfig = field(default_factory=SamplingConfig)
     time: TimeConfig = field(default_factory=TimeConfig)
     reasoning: Mapping[str, Any] | None = None
@@ -110,7 +111,11 @@ class OpenRouterConfig:
     def __post_init__(self) -> None:
         validate_model_slug(self.model_slug)
         if not self.provider or not isinstance(self.provider, str):
-            raise ManifestError("provider must be a non-empty pinned provider slug")
+            raise ManifestError("provider must be a non-empty pinned provider identity")
+        if self.routing_provider_slug is not None and (
+            not isinstance(self.routing_provider_slug, str) or not self.routing_provider_slug
+        ):
+            raise ManifestError("routing_provider_slug must be a non-empty string")
         if self.allow_fallbacks is not False:
             raise ManifestError("provider fallbacks are disabled by protocol")
         if self.require_parameters is not True:
@@ -124,6 +129,10 @@ class OpenRouterConfig:
     @property
     def pinned_provider(self) -> str:
         return self.provider
+
+    @property
+    def provider_route(self) -> str:
+        return self.routing_provider_slug or self.provider
 
 
 @dataclass(frozen=True)
