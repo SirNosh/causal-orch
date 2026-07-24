@@ -46,7 +46,7 @@ def _manifest(slug: str) -> dict:
 
 
 class ConfigAndScriptTests(unittest.TestCase):
-    def test_configs_lock_values_and_keep_unresolved_fields_empty(self):
+    def test_configs_lock_values_and_pin_gaia2_while_provider_remains_unresolved(self):
         experiment = yaml.safe_load((ROOT / "configs/experiment.yaml").read_text())
         models = yaml.safe_load((ROOT / "configs/models.yaml").read_text())
         providers = yaml.safe_load((ROOT / "configs/providers.yaml").read_text())
@@ -59,9 +59,19 @@ class ConfigAndScriptTests(unittest.TestCase):
         self.assertEqual(randomization["assignment"]["ratio"], "50/50")
         self.assertTrue(randomization["seed"])
         self.assertEqual(providers["pinned_provider"], "")
-        self.assertEqual(gaia["gaia2_revision"], "")
-        self.assertEqual(gaia["scenario_ids"], [])
-        self.assertEqual(gaia["manifest_sha256"], "")
+        self.assertEqual(gaia["gaia2_revision"], "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99")
+        self.assertEqual(gaia["scenario_ids"], ["scenario_universe_28_2nr5po"])
+        self.assertEqual(gaia["row_count"], 160)
+        self.assertEqual(gaia["smoke"]["direct_tool_name"], "Emails__list_emails")
+        self.assertEqual(
+            gaia["smoke"]["delegation_proposal"]["allowed_read_tools"],
+            ["Emails__list_emails"],
+        )
+        payload = {key: value for key, value in gaia.items() if key != "manifest_sha256"}
+        expected_manifest_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+        ).hexdigest()
+        self.assertEqual(gaia["manifest_sha256"], expected_manifest_hash)
         self.assertEqual(experiment["manifests"]["model_sha256"], {})
 
     def test_scripts_import_without_side_effects(self):
@@ -71,6 +81,7 @@ class ConfigAndScriptTests(unittest.TestCase):
             "build_tool_allowlist",
             "qualify_models",
             "run_smoke",
+            "fetch_pinned_gaia2",
         ):
             with self.subTest(name=name):
                 _script(name)
