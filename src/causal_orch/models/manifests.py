@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
+from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 
 MODEL_CANDIDATE_ORDER = (
@@ -19,6 +21,9 @@ FIXED_TOP_P = 0.9
 FIXED_MAX_TOKENS = 4096
 FIXED_GENERATION_SECONDS = 5.0
 OPENROUTER_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
+LOCAL_MODEL_SLUG = "Abiray/Nanbeige4.2-3B-GGUF:Q8_0"
+LOCAL_PROVIDER = "Nanbeige/llama.cpp"
+LOCAL_COMPLETIONS_URL = "http://127.0.0.1:8080/v1/chat/completions"
 
 
 class ManifestError(ValueError):
@@ -139,6 +144,85 @@ class OpenRouterConfig:
 
 
 @dataclass(frozen=True)
+class LocalSamplingConfig:
+    """Nanbeige's frozen tool-use sampling policy."""
+
+    temperature: float = 1.0
+    top_p: float = 0.95
+    top_k: int = 20
+    max_tokens: int = FIXED_MAX_TOKENS
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "top_k": self.top_k,
+            "max_tokens": self.max_tokens,
+        }
+
+
+@dataclass(frozen=True)
+class LocalLlamaConfig:
+    """One pinned loopback llama-server and its locally verified artifacts."""
+
+    model_slug: str = LOCAL_MODEL_SLUG
+    provider: str = LOCAL_PROVIDER
+    model_path: str = ""
+    model_sha256: str = ""
+    server_binary_path: str = ""
+    server_binary_sha256: str = ""
+    sampling: LocalSamplingConfig = field(default_factory=LocalSamplingConfig)
+    time: TimeConfig = field(default_factory=TimeConfig)
+    endpoint: str = LOCAL_COMPLETIONS_URL
+    context_length: int = 32768
+    reasoning: Mapping[str, Any] = field(
+        default_factory=lambda: {
+            "enable_thinking": True,
+            "preserve_thinking": True,
+            "tool_call_format": "xml",
+        }
+    )
+    allow_fallbacks: bool = False
+    require_parameters: bool = True
+    data_collection: str = "deny"
+
+    def __post_init__(self) -> None:
+        if self.model_slug != LOCAL_MODEL_SLUG:
+            raise ManifestError(f"local model is pinned to {LOCAL_MODEL_SLUG!r}")
+        if self.provider != LOCAL_PROVIDER:
+            raise ManifestError(f"local provider is pinned to {LOCAL_PROVIDER!r}")
+        if not self.model_path or not self.server_binary_path:
+            raise ManifestError("local model and server binary paths are required")
+        for label, value in (
+            ("model_sha256", self.model_sha256),
+            ("server_binary_sha256", self.server_binary_sha256),
+        ):
+            if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+                raise ManifestError(f"{label} must be a lowercase SHA-256")
+        if self.context_length != 32768:
+            raise ManifestError("local context length is fixed at 32768")
+        parsed = urlparse(self.endpoint)
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+            raise ManifestError("local endpoint must be an HTTP loopback URL")
+        if self.allow_fallbacks or not self.require_parameters:
+            raise ManifestError("local provider fallback and parameter relaxation are disabled")
+        if self.data_collection != "deny":
+            raise ManifestError("local inference must not collect provider data")
+
+    @property
+    def provider_route(self) -> str:
+        return self.provider
+
+    @property
+    def props_endpoint(self) -> str:
+        return self.endpoint.removesuffix("/v1/chat/completions") + "/props"
+
+    def resolved_paths(self, root: str | Path) -> tuple[Path, Path]:
+        base = Path(root)
+        return base / self.model_path, base / self.server_binary_path
+
+
+@dataclass(frozen=True)
 class ProviderManifest:
     provider_slug: str
     context_length: int
@@ -245,6 +329,103 @@ class ModelManifest:
             provider_max_output=value["provider_max_output"],
             provider_data_policy=value["provider_data_policy"],
             manifest_sha256=value.get("manifest_sha256", ""),
+        )
+
+
+@dataclass(frozen=True)
+class LocalModelManifest:
+    """Immutable identity for the exact Nanbeige GGUF and llama.cpp fork."""
+
+    snapshot_timestamp_utc: str
+    requested_model_slug: str
+    original_model_slug: str
+    gguf_repository: str
+    gguf_revision: str
+    gguf_filename: str
+    gguf_sha256: str
+    gguf_size_bytes: int
+    quantization: str
+    context_length: int
+    selected_provider: str
+    llama_cpp_repository: str
+    llama_cpp_branch: str
+    llama_cpp_commit: str
+    server_binary_sha256: str
+    cuda_version: str
+    gpu_name: str
+    driver_version: str
+    kv_cache_type_k: str
+    kv_cache_type_v: str
+    jinja: bool
+    tool_call_format: str
+    preserve_thinking: bool
+    sampling: Mapping[str, Any]
+    manifest_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if self.requested_model_slug != LOCAL_MODEL_SLUG:
+            raise ManifestError("unexpected local model slug")
+        if self.selected_provider != LOCAL_PROVIDER:
+            raise ManifestError("unexpected local provider")
+        if self.quantization != "Q8_0" or self.context_length != 32768:
+            raise ManifestError("local baseline is fixed to Q8_0 with 32K context")
+        if self.llama_cpp_branch != "nanbeige42":
+            raise ManifestError("llama.cpp branch must be nanbeige42")
+        for label, value in (
+            ("gguf_sha256", self.gguf_sha256),
+            ("server_binary_sha256", self.server_binary_sha256),
+            ("llama_cpp_commit", self.llama_cpp_commit),
+        ):
+            if len(value) not in {40, 64} or any(
+                char not in "0123456789abcdef" for char in value
+            ):
+                raise ManifestError(f"{label} is not a lowercase hex digest")
+        computed = hashlib.sha256(
+            _canonical_json(self.to_dict(include_hash=False)).encode("utf-8")
+        ).hexdigest()
+        if self.manifest_sha256 and self.manifest_sha256 != computed:
+            raise ManifestError("manifest_sha256 does not match canonical manifest")
+        object.__setattr__(self, "manifest_sha256", computed)
+
+    def to_dict(self, *, include_hash: bool = True) -> dict[str, Any]:
+        result = {
+            "snapshot_timestamp_utc": self.snapshot_timestamp_utc,
+            "requested_model_slug": self.requested_model_slug,
+            "original_model_slug": self.original_model_slug,
+            "gguf_repository": self.gguf_repository,
+            "gguf_revision": self.gguf_revision,
+            "gguf_filename": self.gguf_filename,
+            "gguf_sha256": self.gguf_sha256,
+            "gguf_size_bytes": self.gguf_size_bytes,
+            "quantization": self.quantization,
+            "context_length": self.context_length,
+            "selected_provider": self.selected_provider,
+            "llama_cpp_repository": self.llama_cpp_repository,
+            "llama_cpp_branch": self.llama_cpp_branch,
+            "llama_cpp_commit": self.llama_cpp_commit,
+            "server_binary_sha256": self.server_binary_sha256,
+            "cuda_version": self.cuda_version,
+            "gpu_name": self.gpu_name,
+            "driver_version": self.driver_version,
+            "kv_cache_type_k": self.kv_cache_type_k,
+            "kv_cache_type_v": self.kv_cache_type_v,
+            "jinja": self.jinja,
+            "tool_call_format": self.tool_call_format,
+            "preserve_thinking": self.preserve_thinking,
+            "sampling": dict(self.sampling),
+        }
+        if include_hash:
+            result["manifest_sha256"] = self.manifest_sha256
+        return result
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "LocalModelManifest":
+        return cls(
+            **{
+                key: item
+                for key, item in value.items()
+                if key in cls.__dataclass_fields__
+            }
         )
 
 

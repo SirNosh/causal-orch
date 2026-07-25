@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from are.simulation.agents.agent_builder import AbstractAgentBuilder
@@ -14,6 +15,8 @@ from are.simulation.agents.are_simulation_agent_config import (
 from causal_orch.agent.action_executor import InterventionActionExecutor
 from causal_orch.agent.orchestrator import CausalOrchestrator
 from causal_orch.models.openrouter_engine import OpenRouterLLMEngine
+from causal_orch.models.local_llama_engine import LocalLlamaLLMEngine
+from causal_orch.models.manifests import LocalLlamaConfig
 from causal_orch.runtime.intervention import DelegationInterventionGate
 from causal_orch.runtime.read_only_tools import MANUALLY_AUDITED_ALLOWLIST, audit_tool
 from causal_orch.agent.worker import DelegationWorkerAdapter
@@ -77,10 +80,17 @@ class CausalAgentBuilder(AbstractAgentBuilder):
         # Construction is deliberately inside build: importing this module or
         # constructing the builder never creates an engine or reads credentials.
         if self.engine_factory is None:
-            llm_engine = OpenRouterLLMEngine(
-                config=self.experiment_config.model_config,
-                trace_sink=self.trace_sink,
-            )
+            if isinstance(self.experiment_config.model_config, LocalLlamaConfig):
+                llm_engine = LocalLlamaLLMEngine(
+                    config=self.experiment_config.model_config,
+                    trace_sink=self.trace_sink,
+                    root=Path(__file__).resolve().parents[3],
+                )
+            else:
+                llm_engine = OpenRouterLLMEngine(
+                    config=self.experiment_config.model_config,
+                    trace_sink=self.trace_sink,
+                )
         else:
             llm_engine = self.engine_factory(
                 config=self.experiment_config.model_config,

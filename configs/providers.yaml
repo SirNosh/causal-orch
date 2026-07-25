@@ -1,7 +1,8 @@
-provider_api: openrouter
-catalog_endpoint: https://openrouter.ai/api/v1/models
-pinned_provider: Darkbloom
-routing_provider_slug: darkbloom
+provider_api: local_openai_compatible
+endpoint: http://127.0.0.1:8080/v1/chat/completions
+pinned_provider: Nanbeige/llama.cpp
+routing_provider_slug: nanbeige-llama-cpp-local
 allow_fallbacks: false
 require_parameters: true
-provider_manifest_sha256: 36a50ce44682077b950940317218e654f3aff2f7bbb7f5fd208f9a7fe9ace510
+data_collection: deny
+provider_manifest_sha256: 8cd77edda03448e978c6771539c94964bb103b91465a9885dc47df76fd916942

@@ -17,6 +17,8 @@ from are.simulation.types import SimulatedGenerationTimeConfig
 
 from causal_orch.models.manifests import (
     FIXED_GENERATION_SECONDS,
+    LocalLlamaConfig,
+    LocalModelManifest,
     ModelManifest,
     OpenRouterConfig,
 )
@@ -29,8 +31,8 @@ CAUSAL_AGENT_NAME = "causal_orchestrator"
 class ExperimentConfig:
     """Explicit experiment dependencies; no credential discovery is performed."""
 
-    model_manifest: ModelManifest
-    model_config: OpenRouterConfig
+    model_manifest: ModelManifest | LocalModelManifest
+    model_config: OpenRouterConfig | LocalLlamaConfig
     intervention_schedule: Any
     intervention_block: Hashable
     trace_sink: Any
@@ -44,9 +46,9 @@ class ExperimentConfig:
     )
 
     def __post_init__(self) -> None:
-        if not isinstance(self.model_manifest, ModelManifest):
+        if not isinstance(self.model_manifest, (ModelManifest, LocalModelManifest)):
             raise TypeError("model_manifest is required")
-        if not isinstance(self.model_config, OpenRouterConfig):
+        if not isinstance(self.model_config, (OpenRouterConfig, LocalLlamaConfig)):
             raise TypeError("model_config is required")
         if self.model_manifest.requested_model_slug != self.model_config.model_slug:
             raise ValueError("model manifest and model config must use the same model")
@@ -76,7 +78,7 @@ class ExperimentConfig:
             raise ValueError("simulated generation time is fixed at 5 seconds")
 
     @property
-    def model(self) -> OpenRouterConfig:
+    def model(self) -> OpenRouterConfig | LocalLlamaConfig:
         return self.model_config
 
     @property
@@ -95,7 +97,7 @@ class CausalAgentConfig(RunnableARESimulationAgentConfig):
     max_iterations: int = 80
     max_turns: int | None = None
     agent_name: str = CAUSAL_AGENT_NAME
-    model_config: OpenRouterConfig | None = None
+    model_config: OpenRouterConfig | LocalLlamaConfig | None = None
     system_prompt: str = DEFAULT_ARE_SIMULATION_REACT_JSON_SYSTEM_PROMPT
     simulated_generation_time_config: SimulatedGenerationTimeConfig = field(
         default_factory=lambda: SimulatedGenerationTimeConfig(

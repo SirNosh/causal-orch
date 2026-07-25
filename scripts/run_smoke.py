@@ -276,30 +276,23 @@ class Gaia2SmokeHarness:
 
 
 def pinned_gaia2_factory() -> Gaia2SmokeHarness:
-    """Build the committed Gaia2/OpenRouter smoke harness from environment credentials."""
+    """Build the committed Gaia2/local-Nanbeige smoke harness."""
 
-    from causal_orch.models.manifests import ModelManifest, OpenRouterConfig
+    from causal_orch.models.manifests import LocalLlamaConfig, LocalModelManifest
     from causal_orch.runner.agent_builder import CausalAgentBuilder
     from causal_orch.runner.config_builder import CausalAgentConfigBuilder, ExperimentConfig
     from causal_orch.runtime.randomization import generate_balanced_schedule
     from causal_orch.tracing.context import RunContext
     from causal_orch.tracing.sink import InMemoryTraceSink
 
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        raise SmokePrerequisiteError("OPENROUTER_API_KEY is not set")
     root = Path(__file__).resolve().parents[1]
     gaia = json.loads((root / "configs" / "gaia2_manifest.json").read_text(encoding="utf-8"))
-    openrouter = json.loads(
-        (root / "configs" / "openrouter_manifest.json").read_text(encoding="utf-8")
+    local = json.loads(
+        (root / "configs" / "local_model_manifest.json").read_text(encoding="utf-8")
     )
     scenario_id = gaia["scenario_ids"][0]
-    if gaia.get("data_classification") != SYNTHETIC_DATA_CLASSIFICATION:
-        raise SmokePrerequisiteError(
-            "provider data collection is allowed only for synthetic public benchmark data"
-        )
-    model_manifest = ModelManifest.from_dict(openrouter["model_manifest"])
-    provider = openrouter["provider_manifest"]
+    model_manifest = LocalModelManifest.from_dict(local["model_manifest"])
+    provider = local["provider_manifest"]
     block_key = "smoke"
     trace_sink = InMemoryTraceSink(
         context=RunContext(
@@ -313,12 +306,15 @@ def pinned_gaia2_factory() -> Gaia2SmokeHarness:
             attempt_id="1",
         )
     )
-    model_config = OpenRouterConfig(
+    runtime = local["runtime"]
+    model_config = LocalLlamaConfig(
         model_slug=model_manifest.requested_model_slug,
         provider=provider["provider_name"],
-        routing_provider_slug=provider["provider_slug"],
-        reasoning={"effort": "low"},
-        api_key=api_key,
+        model_path=runtime["model_path"],
+        model_sha256=model_manifest.gguf_sha256,
+        server_binary_path=runtime["server_binary_path"],
+        server_binary_sha256=model_manifest.server_binary_sha256,
+        endpoint=runtime["endpoint"],
     )
     experiment = ExperimentConfig(
         model_manifest=model_manifest,
@@ -672,8 +668,8 @@ def _manifest_locks(root: Path, scenario_id: str) -> dict[str, Any]:
     gaia = json.loads(
         (root / "configs" / "gaia2_manifest.json").read_text(encoding="utf-8")
     )
-    openrouter = json.loads(
-        (root / "configs" / "openrouter_manifest.json").read_text(encoding="utf-8")
+    local = json.loads(
+        (root / "configs" / "local_model_manifest.json").read_text(encoding="utf-8")
     )
     return {
         "are_commit": LOCKED_ARE_COMMIT,
@@ -682,8 +678,8 @@ def _manifest_locks(root: Path, scenario_id: str) -> dict[str, Any]:
         "gaia2_dataset_sha256": gaia["dataset_sha256"],
         "scenario_id": scenario_id,
         "scenario_sha256": gaia["scenario_sha256"][scenario_id],
-        "model_manifest_sha256": openrouter["model_manifest"]["manifest_sha256"],
-        "provider_manifest_sha256": openrouter["provider_manifest_sha256"],
+        "model_manifest_sha256": local["model_manifest"]["manifest_sha256"],
+        "provider_manifest_sha256": local["provider_manifest_sha256"],
     }
 
 
@@ -781,14 +777,14 @@ def persist_smoke_artifacts(
         json.dumps(model_manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    openrouter_manifest = json.loads(
-        (root / "configs" / "openrouter_manifest.json").read_text(
+    local_manifest = json.loads(
+        (root / "configs" / "local_model_manifest.json").read_text(
             encoding="utf-8"
         )
     )
     provider_manifest = {
-        **openrouter_manifest["provider_manifest"],
-        "manifest_sha256": openrouter_manifest["provider_manifest_sha256"],
+        **local_manifest["provider_manifest"],
+        "manifest_sha256": local_manifest["provider_manifest_sha256"],
     }
     (output_dir / "provider-manifest.json").write_text(
         json.dumps(provider_manifest, indent=2, sort_keys=True) + "\n",
@@ -803,8 +799,10 @@ def persist_smoke_artifacts(
         "require_parameters": experiment.model_config.require_parameters,
         "provider_data_collection": experiment.model_config.data_collection,
         "data_classification": SYNTHETIC_DATA_CLASSIFICATION,
+        "context_length": getattr(experiment.model_config, "context_length", None),
         "sampling": experiment.model_config.sampling.to_dict(),
         "reasoning": _json_value(experiment.model_config.reasoning),
+        "agent_interface": "stock_are_react_json",
         "max_orchestrator_iterations": experiment.max_iterations,
         "max_worker_steps": 8,
         "max_worker_output_tokens": 2000,
@@ -821,7 +819,7 @@ def run_configured_smoke(
     *,
     artifact_root: str | Path | None = None,
 ) -> SmokeExecution:
-    """Run isolated native-tool and delegation smokes on fresh environments."""
+    """Run isolated stock-ARE direct-tool and delegation smokes."""
 
     direct_harness = scenario_factory()
     if not isinstance(direct_harness, Gaia2SmokeHarness):

@@ -1,0 +1,11 @@
+{
+  "completion_sha256": "62f2f54fdc3d26be0e8c7d942d4e687409e992cb9fa444c78e5bd13aaea1dddb",
+  "context_length": 32768,
+  "elapsed_seconds": 2.656000000075437,
+  "llama_cpp_commit": "d28da865bf284acaecc98ad18a3c1f607c0fd754",
+  "model": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+  "model_loaded": true,
+  "provider": "Nanbeige/llama.cpp",
+  "status": "passed",
+  "text_completion_valid": true
+}

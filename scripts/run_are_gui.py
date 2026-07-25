@@ -5,19 +5,21 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 import json
-import os
 from pathlib import Path
 import shutil
 import sys
 from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = ROOT / "scripts"
 GUI_SOURCE = ROOT / "artifacts" / "are-gui-source"
 GUI_DATASET = ROOT / "artifacts" / "are-gui-dataset"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
-from scripts.run_smoke import SmokeExecuteSchedule, pinned_gaia2_factory
+from run_smoke import SmokeExecuteSchedule, pinned_gaia2_factory
 
 
 def _prepare_dataset() -> Path:
@@ -41,10 +43,8 @@ def _prepare_dataset() -> Path:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="localhost")
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        raise RuntimeError("OPENROUTER_API_KEY is not set")
     gui_root = GUI_SOURCE / "are"
     if not (gui_root / "simulation" / "gui" / "client" / "build" / "index.html").is_file():
         raise RuntimeError("native ARE GUI is not built; run: uv run python scripts/setup_are_gui.py")
