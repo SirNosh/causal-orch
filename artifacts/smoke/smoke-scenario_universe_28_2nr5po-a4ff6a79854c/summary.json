@@ -1,0 +1,12 @@
+{
+  "created_at": "2026-07-25T00:11:13.736203+00:00",
+  "error": "SmokePrerequisiteError: SMOKE_WORKER_NOT_COMPLETED:{'classification': 'TREATMENT_FAILURE', 'detail': 'worker exhausted its fixed budget', 'reason': 'TIMEOUT_OR_BUDGET_EXHAUSTION'}",
+  "failure_stage": "WORKER_EXECUTION",
+  "gaia2_success": false,
+  "infrastructure_pass": false,
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "native_validation_completed": false,
+  "provider": "Nvidia",
+  "run_id": "smoke-scenario_universe_28_2nr5po-a4ff6a79854c",
+  "scenario_id": "scenario_universe_28_2nr5po"
+}
