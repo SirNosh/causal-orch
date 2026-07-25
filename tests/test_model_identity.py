@@ -155,6 +155,7 @@ class ModelIdentityTests(unittest.TestCase):
             "only": ["PinnedProvider"],
             "allow_fallbacks": False,
             "require_parameters": True,
+            "data_collection": "allow",
         })
         self.assertTrue(transport.requests[0].headers["X-Request-ID"])
 
@@ -351,6 +352,95 @@ class ModelIdentityTests(unittest.TestCase):
             engine(FakeTransport(response(status_code=429), response(status_code=429)), backoff=policy).chat_completion([])
         self.assertEqual(error.exception.error_type, "RATE_LIMIT")
         self.assertEqual(len(waits), 1)
+
+    def test_every_emitted_request_has_one_terminal_failure_classification(self):
+        cases = (
+            ("invalid-json", HTTPResponse(200, b"not-json"), "INVALID_JSON_BODY"),
+            (
+                "no-choice",
+                HTTPResponse(
+                    200,
+                    {
+                        "model": MODEL_CANDIDATE_ORDER[0],
+                        "provider": "PinnedProvider",
+                        "choices": [],
+                    },
+                ),
+                "NO_COMPLETION_CHOICE",
+            ),
+            (
+                "non-text",
+                HTTPResponse(
+                    200,
+                    {
+                        "model": MODEL_CANDIDATE_ORDER[0],
+                        "provider": "PinnedProvider",
+                        "choices": [{"message": {"content": None}}],
+                    },
+                ),
+                "NON_TEXT_COMPLETION",
+            ),
+            (
+                "empty",
+                HTTPResponse(
+                    200,
+                    {
+                        "model": MODEL_CANDIDATE_ORDER[0],
+                        "provider": "PinnedProvider",
+                        "choices": [{"message": {"content": "  "}}],
+                    },
+                ),
+                "EMPTY_COMPLETION",
+            ),
+            (
+                "transport",
+                OSError("offline"),
+                "TRANSPORT_ERROR",
+            ),
+        )
+        for name, result, expected in cases:
+            with self.subTest(name=name):
+                sink = InMemoryTraceSink()
+                policy = BackoffPolicy(max_retries=0)
+                with self.assertRaises(Exception):
+                    engine(
+                        FakeTransport(result),
+                        trace_sink=sink,
+                        backoff=policy,
+                    ).chat_completion([])
+                terminals = [
+                    event
+                    for event in sink.events
+                    if event.event_type
+                    in {EventName.MODEL_RESPONSE, EventName.MODEL_CALL_FAILED}
+                ]
+                self.assertEqual(len(terminals), 1)
+                self.assertEqual(terminals[0].event_type, EventName.MODEL_CALL_FAILED)
+                self.assertEqual(terminals[0].error_type, expected)
+                self.assertEqual(
+                    sink.events[0].openrouter_request_id,
+                    terminals[0].openrouter_request_id,
+                )
+
+    def test_identity_failure_is_followed_by_one_terminal_failure(self):
+        sink = InMemoryTraceSink()
+        with self.assertRaises(OpenRouterProtocolError):
+            engine(
+                FakeTransport(response(model=MODEL_CANDIDATE_ORDER[1])),
+                trace_sink=sink,
+            ).chat_completion([])
+        self.assertEqual(
+            [event.event_type for event in sink.events],
+            [
+                EventName.MODEL_REQUEST,
+                EventName.MODEL_IDENTITY_MISMATCH,
+                EventName.MODEL_CALL_FAILED,
+            ],
+        )
+        self.assertEqual(
+            sink.events[-1].error_type,
+            "MODEL_IDENTITY_MISMATCH",
+        )
 
     def test_import_does_not_open_a_network_connection(self):
         with patch("urllib.request.urlopen", side_effect=AssertionError("network")):

@@ -24,6 +24,7 @@ from causal_orch.runtime.read_only_tools import (
 from causal_orch.runtime.state_guard import StateGuard, canonical_json
 from causal_orch.tracing.events import EventName, OrchestrationEvent
 
+from .action_executor import trace_model_output_rejection
 from .schemas import DelegationProposal, EvidenceReport, ValidationError
 from .schemas import MAX_WORKER_OUTPUT_TOKENS, MAX_WORKER_STEPS
 
@@ -360,6 +361,21 @@ def worker_prompt(payload: Mapping[str, Any]) -> str:
     return f"{DEFAULT_ARE_SIMULATION_REACT_JSON_SYSTEM_PROMPT}\n\n<worker_instructions>\n{worker_instructions}\n</worker_instructions>"
 
 
+class _TracedWorkerAgent(BaseAgent):
+    def __init__(self, *args: Any, trace_sink: Any | None = None, **kwargs: Any) -> None:
+        self.trace_sink = trace_sink
+        super().__init__(*args, **kwargs)
+
+    def log_error(self, error: Exception) -> None:
+        super().log_error(error)
+        trace_model_output_rejection(
+            self.trace_sink,
+            error,
+            actor_id=self.agent_id,
+            actor_role="worker",
+        )
+
+
 class BaseAgentWorkerFactory:
     """Build a fresh pinned-ARE ``BaseAgent`` around actual selected tools."""
 
@@ -372,6 +388,7 @@ class BaseAgentWorkerFactory:
         time_manager: Any | None = None,
         simulated_generation_time_config: Any | None = None,
         log_callback: Callable[[Any], None] | None = None,
+        trace_sink: Any | None = None,
     ) -> None:
         self.llm_engine = llm_engine
         self.pause_env = pause_env
@@ -379,6 +396,7 @@ class BaseAgentWorkerFactory:
         self.time_manager = time_manager
         self.simulated_generation_time_config = simulated_generation_time_config
         self.log_callback = log_callback
+        self.trace_sink = trace_sink
 
     def __call__(self, payload: Mapping[str, Any], tools: tuple[Any, ...]) -> BaseAgent:
         holder: dict[str, EvidenceReport] = {}
@@ -400,7 +418,7 @@ class BaseAgentWorkerFactory:
             ),
             function=lambda _agent: holder.get("artifact"),
         )
-        agent = BaseAgent(
+        agent = _TracedWorkerAgent(
             llm_engine=_BudgetedEngine(self.llm_engine, budget_state),
             system_prompts={"system_prompt": str(payload["prompt"])},
             tools=tool_map,
@@ -412,6 +430,7 @@ class BaseAgentWorkerFactory:
             simulated_generation_time_config=self.simulated_generation_time_config,
             log_callback=self.log_callback,
             use_custom_logger=False,
+            trace_sink=self.trace_sink,
         )
         if self.pause_env is not None:
             agent.pause_env = self.pause_env
@@ -459,6 +478,7 @@ class DelegationWorkerAdapter:
                 time_manager=time_manager,
                 simulated_generation_time_config=simulated_generation_time_config,
                 log_callback=log_callback,
+                trace_sink=trace_sink,
             )
         self.trace_sink = trace_sink
         self.pause_env = pause_env

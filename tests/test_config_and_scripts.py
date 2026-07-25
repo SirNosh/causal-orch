@@ -65,6 +65,9 @@ class ConfigAndScriptTests(unittest.TestCase):
         self.assertEqual(gaia["gaia2_revision"], "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99")
         self.assertEqual(gaia["scenario_ids"], ["scenario_universe_28_2nr5po"])
         self.assertEqual(gaia["row_count"], 160)
+        self.assertEqual(
+            gaia["data_classification"], "SYNTHETIC_PUBLIC_BENCHMARK"
+        )
         self.assertEqual(gaia["smoke"]["direct_tool_name"], "Emails__list_emails")
         self.assertEqual(
             gaia["smoke"]["delegation_proposal"]["allowed_read_tools"],

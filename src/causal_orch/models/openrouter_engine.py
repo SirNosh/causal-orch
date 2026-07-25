@@ -23,6 +23,26 @@ from causal_orch.tracing.events import EventName, OrchestrationEvent
 
 _FORBIDDEN_METADATA_KEYS = {"thought", "chain_of_thought", "hidden_reasoning", "private_reasoning"}
 _FORBIDDEN_SECRET_KEYS = {"authorization", "api_key", "apikey", "access_token", "password", "secret", "token"}
+MODEL_CALL_FAILURE_TYPES = frozenset(
+    {
+        "HTTP_RATE_LIMIT",
+        "HTTP_OUTAGE",
+        "HTTP_NON_RETRIABLE",
+        "TRANSPORT_ERROR",
+        "INVALID_JSON_BODY",
+        "NO_COMPLETION_CHOICE",
+        "NON_TEXT_COMPLETION",
+        "EMPTY_COMPLETION",
+        "MODEL_IDENTITY_MISMATCH",
+        "PROVIDER_IDENTITY_MISMATCH",
+        "PROVIDER_IDENTITY_UNVERIFIABLE",
+        "OUTPUT_FORMAT_REJECTED",
+        "UNKNOWN_TOOL",
+        "INVALID_TOOL_ARGUMENTS",
+        "ACTION_PARSE_FAILURE",
+        "ENGINE_PROTOCOL_ERROR",
+    }
+)
 
 
 class OpenRouterProtocolError(LLMEngineException):
@@ -381,6 +401,7 @@ class OpenRouterLLMEngine(LLMEngine):
         self.generation_metadata_polling = (
             generation_metadata_polling or GenerationMetadataPollingPolicy()
         )
+        self._pending_request_ids: set[str] = set()
         if self.generation_metadata_lookup is None and config.api_key:
             self.generation_metadata_lookup = OpenRouterGenerationMetadataLookup(
                 api_key=config.api_key,
@@ -402,6 +423,7 @@ class OpenRouterLLMEngine(LLMEngine):
                 "only": [self.config.provider_route],
                 "allow_fallbacks": False,
                 "require_parameters": True,
+                "data_collection": self.config.data_collection,
             },
         }
         if self.config.reasoning is not None:
@@ -472,12 +494,66 @@ class OpenRouterLLMEngine(LLMEngine):
                 self.generation_metadata_polling.wait()
         return None, last_data
 
+    @staticmethod
+    def _failure_type(error: Exception) -> str:
+        error_type = getattr(error, "error_type", None)
+        mapped = {
+            FailureClass.RATE_LIMIT.value: "HTTP_RATE_LIMIT",
+            FailureClass.OUTAGE.value: "HTTP_OUTAGE",
+            FailureClass.HTTP_ERROR.value: "HTTP_NON_RETRIABLE",
+            FailureClass.AUTHENTICATION.value: "HTTP_NON_RETRIABLE",
+            FailureClass.TRANSPORT_ERROR.value: "TRANSPORT_ERROR",
+        }.get(error_type, error_type)
+        return (
+            mapped
+            if mapped in MODEL_CALL_FAILURE_TYPES
+            else "ENGINE_PROTOCOL_ERROR"
+        )
+
     def chat_completion(
         self,
         messages: list[dict[str, Any]],
         stop_sequences: list[str] | None = None,
         schema: Mapping[str, Any] | None = None,
         additional_trace_tags: Mapping[str, Any] | list[Any] | tuple[Any, ...] | str | None = None,
+        **kwargs: Any,
+    ) -> tuple[str, dict[str, Any]]:
+        correlation_id = self.correlation_id_factory()
+        try:
+            return self._chat_completion(
+                messages,
+                stop_sequences,
+                schema,
+                additional_trace_tags,
+                _correlation_id=correlation_id,
+                **kwargs,
+            )
+        except Exception as error:
+            if correlation_id in self._pending_request_ids:
+                self._pending_request_ids.remove(correlation_id)
+                self._trace(
+                    EventName.MODEL_CALL_FAILED,
+                    requested_model_slug=self.config.model_slug,
+                    provider_slug=self.config.provider,
+                    openrouter_request_id=correlation_id,
+                    error_type=self._failure_type(error),
+                    protocol_violation=getattr(error, "protocol_violation", None),
+                    payload={
+                        "status_code": getattr(error, "status_code", None),
+                        "engine_error_type": getattr(
+                            error, "error_type", type(error).__name__
+                        ),
+                    },
+                )
+            raise
+
+    def _chat_completion(
+        self,
+        messages: list[dict[str, Any]],
+        stop_sequences: list[str] | None = None,
+        schema: Mapping[str, Any] | None = None,
+        additional_trace_tags: Mapping[str, Any] | list[Any] | tuple[Any, ...] | str | None = None,
+        _correlation_id: str | None = None,
         **kwargs: Any,
     ) -> tuple[str, dict[str, Any]]:
         forbidden_overrides = {"model", "provider", "temperature", "top_p", "max_tokens", "reasoning"}
@@ -487,7 +563,7 @@ class OpenRouterLLMEngine(LLMEngine):
                 f"fixed request fields cannot be overridden: {sorted(attempted)}",
                 error_type="FIXED_CONFIGURATION_OVERRIDE",
             )
-        correlation_id = self.correlation_id_factory()
+        correlation_id = _correlation_id or self.correlation_id_factory()
         started = time.monotonic()
         if not isinstance(messages, list):
             raise OpenRouterProtocolError("messages must be a list", error_type="INVALID_REQUEST")
@@ -511,6 +587,7 @@ class OpenRouterLLMEngine(LLMEngine):
             retry_count=0,
             payload=trace_payload,
         )
+        self._pending_request_ids.add(correlation_id)
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
@@ -573,9 +650,22 @@ class OpenRouterLLMEngine(LLMEngine):
         else:  # pragma: no cover - range always has a final attempt
             raise AssertionError("unreachable")
 
-        body = _json_body(response)
+        try:
+            body = _json_body(response)
+        except Exception as error:
+            raise OpenRouterProtocolError(
+                "response body is not valid JSON",
+                error_type="INVALID_JSON_BODY",
+                request_id=correlation_id,
+                status_code=status_code,
+            ) from error
         if not isinstance(body, Mapping):
-            raise OpenRouterProtocolError("response body is not a JSON object", error_type="INVALID_RESPONSE")
+            raise OpenRouterProtocolError(
+                "response body is not a JSON object",
+                error_type="INVALID_JSON_BODY",
+                request_id=correlation_id,
+                status_code=status_code,
+            )
         returned_model = body.get("model")
         if returned_model != self.config.model_slug:
             self._trace(
@@ -645,7 +735,11 @@ class OpenRouterLLMEngine(LLMEngine):
             )
         choices = body.get("choices")
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], Mapping):
-            raise OpenRouterProtocolError("response contains no completion choice", error_type="INVALID_RESPONSE")
+            raise OpenRouterProtocolError(
+                "response contains no completion choice",
+                error_type="NO_COMPLETION_CHOICE",
+                request_id=request_id,
+            )
         message = choices[0].get("message", {})
         content = message.get("content") if isinstance(message, Mapping) else None
         if isinstance(content, list):
@@ -653,9 +747,19 @@ class OpenRouterLLMEngine(LLMEngine):
                 part.get("text", "") for part in content if isinstance(part, Mapping)
             )
         if not isinstance(content, str):
-            raise OpenRouterProtocolError("completion content is not text", error_type="INVALID_RESPONSE")
+            raise OpenRouterProtocolError(
+                "completion content is not text",
+                error_type="NON_TEXT_COMPLETION",
+                request_id=request_id,
+            )
         for stop_token in stop_sequences or ():
             content = content.split(stop_token)[0]
+        if not content.strip():
+            raise OpenRouterProtocolError(
+                "completion content is empty",
+                error_type="EMPTY_COMPLETION",
+                request_id=request_id,
+            )
 
         usage = body.get("usage") or {}
         details = usage.get("completion_tokens_details") or {}
@@ -692,6 +796,7 @@ class OpenRouterLLMEngine(LLMEngine):
             retry_count=retry_count,
             payload={"request_id": request_id, "trace_tags": dict(trace_tags), "provider_identity_source": provider_source},
         )
+        self._pending_request_ids.remove(correlation_id)
         return content, metadata
 
     def simple_call(self, prompt: str) -> str:

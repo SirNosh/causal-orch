@@ -16,6 +16,76 @@ from are.simulation.agents.default_agent.tools.json_action_executor import (
     JsonActionExecutor,
     get_observation_log,
 )
+from are.simulation.exceptions import (
+    FormatError,
+    InvalidActionAgentError,
+    JsonExecutionAgentError,
+    JsonParsingAgentError,
+    UnavailableToolAgentError,
+)
+
+from causal_orch.tracing.events import EventName, OrchestrationEvent
+
+
+def trace_model_output_rejection(
+    trace_sink: Any,
+    error: Exception,
+    *,
+    actor_id: str | None,
+    actor_role: str,
+) -> None:
+    """Record an accepted model response that ARE could not execute."""
+
+    if trace_sink is None:
+        return
+    if isinstance(error, UnavailableToolAgentError):
+        reason = "UNKNOWN_TOOL"
+    elif isinstance(error, JsonExecutionAgentError):
+        reason = "INVALID_TOOL_ARGUMENTS"
+    elif isinstance(error, JsonParsingAgentError):
+        reason = "JSON_PARSE"
+    elif isinstance(error, FormatError):
+        reason = "ACTION_PARSE_FAILURE"
+    elif isinstance(error, InvalidActionAgentError):
+        reason = (
+            "MISSING_ACTION_TOKEN"
+            if "token" in str(error).lower()
+            or "formatted correctly" in str(error).lower()
+            else "ACTION_PARSE_FAILURE"
+        )
+    else:
+        return
+
+    events = tuple(getattr(trace_sink, "events", ()))
+    response_index = next(
+        (
+            index
+            for index in range(len(events) - 1, -1, -1)
+            if events[index].event_type is EventName.MODEL_RESPONSE
+        ),
+        None,
+    )
+    request_id = (
+        events[response_index].openrouter_request_id
+        if response_index is not None
+        else None
+    )
+    if response_index is not None and any(
+        event.event_type is EventName.MODEL_OUTPUT_REJECTED
+        and event.openrouter_request_id == request_id
+        for event in events[response_index + 1 :]
+    ):
+        return
+    trace_sink.append(
+        OrchestrationEvent(
+            event_type=EventName.MODEL_OUTPUT_REJECTED,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            openrouter_request_id=request_id,
+            error_type=reason,
+            payload={"reason": reason},
+        )
+    )
 
 
 class InterventionActionExecutor(JsonActionExecutor):

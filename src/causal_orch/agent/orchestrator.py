@@ -22,6 +22,8 @@ from are.simulation.agents.default_agent.prompts.system_prompt import (
 from causal_orch.runtime.context_registry import TraceContextRegistry
 from causal_orch.tracing.events import EventName, OrchestrationEvent
 
+from .action_executor import trace_model_output_rejection
+
 
 _DELEGATE_PROMPT_START = "<!-- causal-orch delegation instructions -->"
 _DELEGATE_PROMPT_END = "<!-- end causal-orch delegation instructions -->"
@@ -87,6 +89,7 @@ class CausalOrchestrator(BaseAgent):
         self.eligibility_context_provider = eligibility_context_provider
         self._delegation_base_prompt = system_prompt
         self.context_registry = TraceContextRegistry()
+        self.trace_sink = action_executor.trace_sink
         super().__init__(
             llm_engine=llm_engine,
             system_prompts={
@@ -179,6 +182,15 @@ class CausalOrchestrator(BaseAgent):
             self.append_agent_log,
             self.make_timestamp,
             self.agent_id,
+        )
+
+    def log_error(self, error: Exception) -> None:
+        super().log_error(error)
+        trace_model_output_rejection(
+            self.trace_sink,
+            error,
+            actor_id=self.agent_id,
+            actor_role="orchestrator",
         )
 
     def step(self) -> None:

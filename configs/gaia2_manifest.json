@@ -1,9 +1,10 @@
 {
   "benchmark": "Gaia2",
   "config": "search",
+  "data_classification": "SYNTHETIC_PUBLIC_BENCHMARK",
   "dataset_sha256": "24a56de2ca5bd70ea3280b8e4f8425af87f2177ef2cfd14c3897eb77fe13be54",
   "gaia2_revision": "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99",
-  "manifest_sha256": "4ee83a305cbf8fb65dad4f40120181e5ada3676a008d56d3e66bda085a211e0a",
+  "manifest_sha256": "354d5498bfbd22c380d6e79eec2ecaab7878b3c9bbcba5d3fee488baca5641fa",
   "row_count": 160,
   "row_ids": [
     "0296_yxauylkdn61cesadi3fx0zplw3pfd0qg"

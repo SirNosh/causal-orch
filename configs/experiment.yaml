@@ -14,7 +14,7 @@ gaia2_manifest_file: gaia2_manifest.json
 openrouter_manifest_file: openrouter_manifest.json
 
 manifests:
-  gaia2_sha256: 4ee83a305cbf8fb65dad4f40120181e5ada3676a008d56d3e66bda085a211e0a
+  gaia2_sha256: 354d5498bfbd22c380d6e79eec2ecaab7878b3c9bbcba5d3fee488baca5641fa
   model_sha256:
     openai/gpt-oss-20b:free: bd993231c17d291fe5a36911d9c1912e6a39b8199a51803fc9e5194df02d191e
   provider_sha256: 36a50ce44682077b950940317218e654f3aff2f7bbb7f5fd208f9a7fe9ace510

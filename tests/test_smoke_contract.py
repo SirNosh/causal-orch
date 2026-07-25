@@ -69,6 +69,41 @@ class SmokeContractTests(unittest.TestCase):
             smoke.pinned_gaia2_factory,
         )
 
+    def test_direct_action_returns_the_logged_tool_observation(self):
+        smoke = load_smoke()
+        from are.simulation.agents.agent_log import ObservationLog
+
+        forwarded_logs = []
+
+        class Executor:
+            def execute_parsed_action(
+                self, parsed_action, append_log, make_timestamp, agent_id
+            ):
+                append_log(
+                    ObservationLog(
+                        content="actual tool result",
+                        timestamp=make_timestamp(),
+                        agent_id=agent_id,
+                    )
+                )
+
+        harness = object.__new__(smoke.Gaia2SmokeHarness)
+        harness._start = lambda: None
+        harness._emit = lambda *args, **kwargs: None
+        harness.direct_tool_name = "Emails__list_emails"
+        harness.direct_tool_arguments = {"folder_name": "INBOX", "limit": 5}
+        harness.agent = SimpleNamespace(
+            react_agent=SimpleNamespace(
+                action_executor=Executor(),
+                append_agent_log=forwarded_logs.append,
+                make_timestamp=lambda: 0.0,
+                agent_id="orchestrator",
+            )
+        )
+
+        self.assertEqual(harness.direct_action(), "actual tool result")
+        self.assertEqual(len(forwarded_logs), 1)
+
     def test_required_harness_paths_native_validation_and_trace_are_executed(self):
         smoke = load_smoke()
         calls = []
@@ -118,6 +153,11 @@ class SmokeContractTests(unittest.TestCase):
                     {
                         "event_type": "MODEL_REQUEST",
                         "openrouter_request_id": "failed-worker-attempt",
+                    },
+                    {
+                        "event_type": "MODEL_CALL_FAILED",
+                        "openrouter_request_id": "failed-worker-attempt",
+                        "error_type": "TRANSPORT_ERROR",
                     },
                     {
                         "event_type": "MODEL_REQUEST",
@@ -221,6 +261,39 @@ class SmokeContractTests(unittest.TestCase):
         with self.assertRaises(smoke.SmokePrerequisiteError):
             smoke.check_trace_completeness([{"event_type": "RUN_STARTED"}, {"event_type": "RUN_COMPLETED"}])
 
+    def test_frozen_five_attempt_qualification_gate(self):
+        smoke = load_smoke()
+        passing = {
+            "infrastructure_pass": True,
+            "model_identity_verified": True,
+            "provider_identity_verified": True,
+            "worker_tool_call_success": True,
+            "worker_artifact_valid": True,
+            "continuation_response_accepted": True,
+            "gaia2_success": False,
+            "terminal_coverage": True,
+            "unclassified_model_call_failures": 0,
+        }
+        attempts = [{**passing, "gaia2_success": index == 0} for index in range(5)]
+        report = smoke.qualification_gate(attempts)
+        self.assertTrue(report["qualified"])
+        self.assertEqual(report["counts"]["infrastructure_passes"], 5)
+
+        one_infrastructure_failure = [
+            {**attempt, "infrastructure_pass": index != 0}
+            for index, attempt in enumerate(attempts)
+        ]
+        self.assertTrue(
+            smoke.qualification_gate(one_infrastructure_failure)["qualified"]
+        )
+        identity_failure = [
+            {**attempt, "model_identity_verified": index != 0}
+            for index, attempt in enumerate(attempts)
+        ]
+        self.assertFalse(smoke.qualification_gate(identity_failure)["qualified"])
+        with self.assertRaises(ValueError):
+            smoke.qualification_gate(attempts[:4])
+
     def test_suppressed_smoke_assignment_is_rejected(self):
         smoke = load_smoke()
         with self.assertRaisesRegex(
@@ -243,6 +316,7 @@ class SmokeContractTests(unittest.TestCase):
         from causal_orch.tracing.context import RunContext
         from causal_orch.tracing.events import OrchestrationEvent
         from causal_orch.tracing.sink import InMemoryTraceSink
+        from causal_orch.models.manifests import ModelManifest, OpenRouterConfig
 
         scenario_id = "scenario_universe_28_2nr5po"
         sink = InMemoryTraceSink(
@@ -262,14 +336,26 @@ class SmokeContractTests(unittest.TestCase):
                 },
             )
         )
+        openrouter = json.loads(
+            (ROOT / "configs" / "openrouter_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        model_manifest = ModelManifest.from_dict(openrouter["model_manifest"])
+        model_config = OpenRouterConfig(
+            model_manifest.requested_model_slug,
+            model_manifest.selected_provider,
+            routing_provider_slug=openrouter["routing_provider_slug"],
+        )
         harness = SimpleNamespace(
+            direct_tool_name="Emails__list_emails",
+            direct_tool_arguments={"folder_name": "INBOX", "limit": 5},
             agent_builder=SimpleNamespace(
                 trace_sink=sink,
                 experiment_config=SimpleNamespace(
-                    model_config=SimpleNamespace(
-                        model_slug="model-1",
-                        provider="provider-1",
-                    )
+                    model_manifest=model_manifest,
+                    model_config=model_config,
+                    max_iterations=12,
                 ),
             )
         )
@@ -297,6 +383,10 @@ class SmokeContractTests(unittest.TestCase):
                     "summary.json",
                     "validation.json",
                     "manifest-locks.json",
+                    "direct-sanity.json",
+                    "model-manifest.json",
+                    "provider-manifest.json",
+                    "request-policy.json",
                 },
             )
             summary = json.loads(

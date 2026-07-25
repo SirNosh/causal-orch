@@ -9,6 +9,7 @@ from enum import Enum
 import hashlib
 import importlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -17,6 +18,7 @@ from uuid import uuid4
 
 
 LOCKED_ARE_COMMIT = "7946367413129784139e785ae4c351090002a0bb"
+SYNTHETIC_DATA_CLASSIFICATION = "SYNTHETIC_PUBLIC_BENCHMARK"
 REQUIRED_SMOKE_CHECKS = (
     "pinned_are",
     "configured_gaia2",
@@ -193,15 +195,31 @@ class Gaia2SmokeHarness:
         from are.simulation.agents.default_agent.tools.action_executor import ParsedAction
 
         self._start()
-        result = self.agent.react_agent.action_executor.execute_parsed_action(
+        logs: list[Any] = []
+
+        def append_log(log: Any) -> None:
+            logs.append(log)
+            self.agent.react_agent.append_agent_log(log)
+
+        self.agent.react_agent.action_executor.execute_parsed_action(
             ParsedAction(
                 tool_name=self.direct_tool_name,
                 arguments=self.direct_tool_arguments,
             ),
-            self.agent.react_agent.append_agent_log,
+            append_log,
             self.agent.react_agent.make_timestamp,
             self.agent.react_agent.agent_id,
         )
+        result = next(
+            (
+                log.content
+                for log in reversed(logs)
+                if getattr(log, "get_type", lambda: None)() == "observation"
+            ),
+            None,
+        )
+        if result is None:
+            raise SmokePrerequisiteError("SMOKE_DIRECT_ACTION_RESULT_MISSING")
         self._emit(
             "DIRECT_ACTION",
             proposed_action=self.direct_tool_name,
@@ -276,6 +294,10 @@ def pinned_gaia2_factory() -> Gaia2SmokeHarness:
         (root / "configs" / "openrouter_manifest.json").read_text(encoding="utf-8")
     )
     scenario_id = gaia["scenario_ids"][0]
+    if gaia.get("data_classification") != SYNTHETIC_DATA_CLASSIFICATION:
+        raise SmokePrerequisiteError(
+            "provider data collection is allowed only for synthetic public benchmark data"
+        )
     model_manifest = ModelManifest.from_dict(openrouter["model_manifest"])
     provider = openrouter["provider_manifest"]
     block_key = "smoke"
@@ -443,6 +465,7 @@ def check_trace_completeness(
     expected_provider: str | None = None,
 ) -> tuple[str, ...]:
     from causal_orch.agent.schemas import EvidenceReport
+    from causal_orch.models.openrouter_engine import MODEL_CALL_FAILURE_TYPES
 
     names = tuple(_event_name(event) for event in events)
     if not names:
@@ -476,6 +499,27 @@ def check_trace_completeness(
     response_positions = [
         index for index, name in enumerate(names) if name == "MODEL_RESPONSE"
     ]
+    failure_positions = [
+        index for index, name in enumerate(names) if name == "MODEL_CALL_FAILED"
+    ]
+    request_ids = [
+        _event_value(events[index], "openrouter_request_id")
+        for index in request_positions
+    ]
+    terminal_ids = [
+        _event_value(events[index], "openrouter_request_id")
+        for index in response_positions + failure_positions
+    ]
+    if any(
+        not request_id or terminal_ids.count(request_id) != 1
+        for request_id in request_ids
+    ) or any(request_id not in request_ids for request_id in terminal_ids):
+        raise SmokePrerequisiteError("TRACE_MODEL_TERMINAL_COVERAGE_INVALID")
+    if any(
+        _event_value(events[index], "error_type") not in MODEL_CALL_FAILURE_TYPES
+        for index in failure_positions
+    ):
+        raise SmokePrerequisiteError("TRACE_MODEL_FAILURE_UNCLASSIFIED")
     requests_by_id = {
         _event_value(events[index], "openrouter_request_id"): index
         for index in request_positions
@@ -508,7 +552,17 @@ def check_trace_completeness(
     resumed_position = names.index("ORCHESTRATOR_RESUMED")
     if not any(request > resumed_position for request in request_positions):
         raise SmokePrerequisiteError("TRACE_ORCHESTRATOR_CONTINUATION_REQUEST_MISSING")
-    if not any(response > resumed_position for _, response in roundtrips):
+    rejected_request_ids = {
+        _event_value(event, "openrouter_request_id")
+        for event in events
+        if _event_name(event) == "MODEL_OUTPUT_REJECTED"
+    }
+    if not any(
+        response > resumed_position
+        and _event_value(events[response], "openrouter_request_id")
+        not in rejected_request_ids
+        for _, response in roundtrips
+    ):
         raise SmokePrerequisiteError("TRACE_ORCHESTRATOR_CONTINUATION_RESPONSE_MISSING")
     for index in response_positions:
         event = events[index]
@@ -633,6 +687,16 @@ def _manifest_locks(root: Path, scenario_id: str) -> dict[str, Any]:
     }
 
 
+def _sha256_json(value: Any) -> str:
+    encoded = json.dumps(
+        _json_value(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def persist_smoke_artifacts(
     execution: SmokeExecution,
     events: Sequence[Any],
@@ -665,6 +729,11 @@ def persist_smoke_artifacts(
         encoding="utf-8",
     )
     summary = {
+        "direct_action_completed": True,
+        "direct_action_tool": harness.direct_tool_name,
+        "direct_action_result_sha256": _sha256_json(
+            execution.direct_action_result
+        ),
         "infrastructure_pass": execution.infrastructure_pass,
         "native_validation_completed": execution.native_validation_completed,
         "gaia2_success": execution.gaia2_success,
@@ -695,6 +764,53 @@ def persist_smoke_artifacts(
     (output_dir / "manifest-locks.json").write_text(
         json.dumps(_manifest_locks(root, str(scenario_id)), indent=2, sort_keys=True)
         + "\n",
+        encoding="utf-8",
+    )
+    direct_sanity = {
+        "completed": True,
+        "tool": harness.direct_tool_name,
+        "arguments_sha256": _sha256_json(harness.direct_tool_arguments),
+        "result_sha256": _sha256_json(execution.direct_action_result),
+    }
+    (output_dir / "direct-sanity.json").write_text(
+        json.dumps(direct_sanity, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    model_manifest = experiment.model_manifest.to_dict()
+    (output_dir / "model-manifest.json").write_text(
+        json.dumps(model_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    openrouter_manifest = json.loads(
+        (root / "configs" / "openrouter_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    provider_manifest = {
+        **openrouter_manifest["provider_manifest"],
+        "manifest_sha256": openrouter_manifest["provider_manifest_sha256"],
+    }
+    (output_dir / "provider-manifest.json").write_text(
+        json.dumps(provider_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    request_policy = {
+        "endpoint": experiment.model_config.endpoint,
+        "model": experiment.model_config.model_slug,
+        "provider": experiment.model_config.provider,
+        "provider_route": experiment.model_config.provider_route,
+        "allow_fallbacks": experiment.model_config.allow_fallbacks,
+        "require_parameters": experiment.model_config.require_parameters,
+        "provider_data_collection": experiment.model_config.data_collection,
+        "data_classification": SYNTHETIC_DATA_CLASSIFICATION,
+        "sampling": experiment.model_config.sampling.to_dict(),
+        "reasoning": _json_value(experiment.model_config.reasoning),
+        "max_orchestrator_iterations": experiment.max_iterations,
+        "max_worker_steps": 8,
+        "max_worker_output_tokens": 2000,
+    }
+    (output_dir / "request-policy.json").write_text(
+        json.dumps(request_policy, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return output_dir
@@ -798,6 +914,193 @@ def run_configured_smoke(
     finally:
         harness.close()
     return execution
+
+
+def qualification_attempt_metrics(
+    execution: SmokeExecution,
+    events: Sequence[Any],
+    *,
+    expected_model: str,
+    expected_provider: str,
+) -> dict[str, Any]:
+    """Reduce one persisted smoke to the frozen route-qualification measures."""
+
+    from causal_orch.models.openrouter_engine import MODEL_CALL_FAILURE_TYPES
+
+    names = [_event_name(event) for event in events]
+    requests = [
+        event for event in events if _event_name(event) == "MODEL_REQUEST"
+    ]
+    responses = [
+        event for event in events if _event_name(event) == "MODEL_RESPONSE"
+    ]
+    failures = [
+        event for event in events if _event_name(event) == "MODEL_CALL_FAILED"
+    ]
+    terminal_ids = [
+        _event_value(event, "openrouter_request_id")
+        for event in responses + failures
+    ]
+    terminal_coverage = bool(requests) and all(
+        terminal_ids.count(_event_value(event, "openrouter_request_id")) == 1
+        for event in requests
+    ) and len(terminal_ids) == len(requests)
+    unclassified_failures = sum(
+        _event_value(event, "error_type") not in MODEL_CALL_FAILURE_TYPES
+        for event in failures
+    )
+    model_verified = bool(responses) and all(
+        _event_value(event, "requested_model_slug") == expected_model
+        and _event_value(event, "returned_model_slug") == expected_model
+        for event in responses
+    )
+    provider_verified = bool(responses) and all(
+        _event_value(event, "provider_slug") == expected_provider
+        for event in responses
+    )
+    worker_tool_success = any(
+        _event_name(event) == "WORKER_TOOL_RESULT"
+        and _event_value(event, "error_type") is None
+        for event in events
+    )
+    worker_artifact_valid = "WORKER_ARTIFACT" in names
+    resumed_index = (
+        names.index("ORCHESTRATOR_RESUMED")
+        if "ORCHESTRATOR_RESUMED" in names
+        else None
+    )
+    rejected_ids = {
+        _event_value(event, "openrouter_request_id")
+        for event in events
+        if _event_name(event) == "MODEL_OUTPUT_REJECTED"
+    }
+    continuation_response_accepted = resumed_index is not None and any(
+        index > resumed_index
+        and _event_value(event, "openrouter_request_id") not in rejected_ids
+        for index, event in enumerate(events)
+        if _event_name(event) == "MODEL_RESPONSE"
+    )
+    return {
+        "artifact_dir": execution.artifact_dir,
+        "infrastructure_pass": execution.infrastructure_pass,
+        "native_validation_completed": execution.native_validation_completed,
+        "gaia2_success": execution.gaia2_success,
+        "terminal_coverage": terminal_coverage,
+        "model_identity_verified": model_verified,
+        "provider_identity_verified": provider_verified,
+        "worker_tool_call_success": worker_tool_success,
+        "worker_artifact_valid": worker_artifact_valid,
+        "continuation_response_accepted": continuation_response_accepted,
+        "unclassified_model_call_failures": unclassified_failures,
+        "model_call_failures": [
+            _event_value(event, "error_type") for event in failures
+        ],
+        "failure_stage": execution.failure_stage,
+        "error": execution.error,
+    }
+
+
+def qualification_gate(attempts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Apply the frozen 4/5 infrastructure and 5/5 identity gate."""
+
+    if len(attempts) < 5:
+        raise ValueError("qualification requires at least five attempts")
+
+    def count(field: str) -> int:
+        return sum(bool(attempt.get(field)) for attempt in attempts)
+
+    counts = {
+        "attempts": len(attempts),
+        "infrastructure_passes": count("infrastructure_pass"),
+        "model_identity_verified": count("model_identity_verified"),
+        "provider_identity_verified": count("provider_identity_verified"),
+        "worker_tool_call_successes": count("worker_tool_call_success"),
+        "valid_worker_artifacts": count("worker_artifact_valid"),
+        "accepted_continuation_responses": count(
+            "continuation_response_accepted"
+        ),
+        "gaia2_successes": count("gaia2_success"),
+        "unclassified_model_call_failures": sum(
+            int(attempt.get("unclassified_model_call_failures", 0))
+            for attempt in attempts
+        ),
+        "terminal_coverage_passes": count("terminal_coverage"),
+    }
+    required_reliable = math.ceil(0.8 * len(attempts))
+    qualified = (
+        counts["infrastructure_passes"] >= required_reliable
+        and counts["model_identity_verified"] == len(attempts)
+        and counts["provider_identity_verified"] == len(attempts)
+        and counts["worker_tool_call_successes"] >= required_reliable
+        and counts["valid_worker_artifacts"] >= required_reliable
+        and counts["accepted_continuation_responses"] >= required_reliable
+        and counts["gaia2_successes"] >= 1
+        and counts["unclassified_model_call_failures"] == 0
+        and counts["terminal_coverage_passes"] == len(attempts)
+    )
+    return {
+        "qualified": qualified,
+        "gate": {
+            "minimum_infrastructure_passes": required_reliable,
+            "required_identity_verified_attempts": len(attempts),
+            "minimum_worker_tool_call_successes": required_reliable,
+            "minimum_valid_worker_artifacts": required_reliable,
+            "minimum_accepted_continuation_responses": required_reliable,
+            "minimum_gaia2_successes": 1,
+            "maximum_unclassified_model_call_failures": 0,
+            "required_terminal_coverage_attempts": len(attempts),
+        },
+        "counts": counts,
+        "attempts": list(attempts),
+    }
+
+
+def run_route_qualification(
+    scenario_factory: Callable[[], Any],
+    *,
+    artifact_root: str | Path,
+    attempts: int = 5,
+    progress: Callable[[Mapping[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    if attempts < 5:
+        raise ValueError("qualification requires at least five attempts")
+    root = Path(artifact_root)
+    root.mkdir(parents=True, exist_ok=False)
+    results = []
+    for attempt_number in range(1, attempts + 1):
+        execution = run_configured_smoke(
+            scenario_factory,
+            artifact_root=root / "attempts",
+        )
+        if execution.artifact_dir is None:
+            raise SmokePrerequisiteError("qualification attempt was not persisted")
+        trace_path = Path(execution.artifact_dir) / "trace.jsonl"
+        events = [
+            json.loads(line)
+            for line in trace_path.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        harness = scenario_factory()
+        experiment = harness.agent_builder.experiment_config
+        metrics = qualification_attempt_metrics(
+            execution,
+            events,
+            expected_model=experiment.model_config.model_slug,
+            expected_provider=experiment.model_config.provider,
+        )
+        metrics["attempt_number"] = attempt_number
+        results.append(metrics)
+        if progress is not None:
+            progress(metrics)
+    report = qualification_gate(results)
+    report["created_at"] = datetime.now(timezone.utc).isoformat()
+    report["model"] = experiment.model_config.model_slug
+    report["provider"] = experiment.model_config.provider
+    (root / "qualification-summary.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return report
 
 
 def main(argv: Sequence[str] | None = None) -> int:

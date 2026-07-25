@@ -107,6 +107,7 @@ class OpenRouterConfig:
     attribution_headers: Mapping[str, str] = field(default_factory=dict)
     allow_fallbacks: bool = False
     require_parameters: bool = True
+    data_collection: str = "allow"
 
     def __post_init__(self) -> None:
         validate_model_slug(self.model_slug)
@@ -120,6 +121,8 @@ class OpenRouterConfig:
             raise ManifestError("provider fallbacks are disabled by protocol")
         if self.require_parameters is not True:
             raise ManifestError("provider parameter requirement is fixed to true")
+        if self.data_collection not in {"allow", "deny"}:
+            raise ManifestError("data_collection must be 'allow' or 'deny'")
         if not self.endpoint:
             raise ManifestError("endpoint must be non-empty")
         for key, value in self.attribution_headers.items():
