@@ -655,7 +655,7 @@ class DelegationWorkerAdapter:
                 payload={"artifact": result["artifact"]},
             )
         self._emit(
-            EventName.ORCHESTRATOR_RESUMED,
+            EventName.WORKER_COMPLETED,
             actor_id=worker_id,
             payload={"status": result["status"], "failure": result["failure"]},
         )

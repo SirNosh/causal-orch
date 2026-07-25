@@ -196,7 +196,7 @@ class WorkerReadOnlyTests(unittest.TestCase):
                 EventName.WORKER_TOOL_RESULT,
                 EventName.WORKER_STATE_GUARD,
                 EventName.WORKER_ARTIFACT,
-                EventName.ORCHESTRATOR_RESUMED,
+                EventName.WORKER_COMPLETED,
             ],
         )
         self.assertTrue(all(event.previous_event_id for event in sink.events[1:]))

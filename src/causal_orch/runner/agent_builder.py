@@ -201,6 +201,7 @@ class CausalAgentBuilder(AbstractAgentBuilder):
             llm_engine=llm_engine,
             base_agent=base_agent,
             time_manager=env.time_manager,
+            max_iterations=max_iterations,
             max_turns=max_turns,
             simulated_generation_time_config=time_config,
         )

@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
+from datetime import datetime, timezone
+from enum import Enum
+import hashlib
 import importlib
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any, Callable, Mapping, Sequence
+from uuid import uuid4
 
 
 LOCKED_ARE_COMMIT = "7946367413129784139e785ae4c351090002a0bb"
@@ -19,6 +24,7 @@ REQUIRED_SMOKE_CHECKS = (
     "configured_scenario",
     "direct_action",
     "forced_delegation",
+    "orchestrator_continuation",
     "native_validation",
     "trace_completeness",
 )
@@ -40,8 +46,19 @@ class SmokeExecution:
     direct_action_result: Any
     delegation_result: Any
     validation_result: Any
-    native_success: bool
+    infrastructure_pass: bool
+    native_validation_completed: bool
+    gaia2_success: bool
+    failure_stage: str | None
     trace_event_names: tuple[str, ...]
+    error: str | None = None
+    artifact_dir: str | None = None
+
+    @property
+    def native_success(self) -> bool:
+        """Compatibility alias for the Gaia2 capability outcome."""
+
+        return self.gaia2_success
 
 
 class SmokePrerequisiteError(ValueError):
@@ -105,16 +122,51 @@ class Gaia2SmokeHarness:
     def _start(self) -> None:
         if self._started:
             return
+        from are.simulation.data_handler.importer import JsonScenarioImporter
         from are.simulation.environment import Environment
-        from are.simulation.scenarios.utils.load_utils import load_scenario
+        from are.simulation.scenarios.scenario_imported_from_json.utils import (
+            preprocess_scenario,
+        )
+        from are.simulation.validation.configs import (
+            CheckerType,
+            ScriptedGraphPerEventJudgeConfig,
+            ToolCheckerParam,
+        )
 
-        self.scenario = load_scenario(str(self.scenario_path))
+        scenario_json = self.scenario_path.read_text(encoding="utf-8")
+        self.scenario, _, _ = JsonScenarioImporter().import_from_json_to_benchmark(
+            scenario_json,
+            load_completed_events=False,
+        )
+        scripted_checks: dict[str, list[ToolCheckerParam]] = {}
+        for event in self.scenario.serialized_events:
+            if event.class_name != "OracleEvent" or event.action is None:
+                continue
+            tool_name = f"{event.action.app}__{event.action.function}"
+            scripted_checks[event.event_id] = [
+                ToolCheckerParam(
+                    arg_name=arg.name,
+                    checker_type=(
+                        CheckerType.eq_str_strip_checker
+                        if arg.value_type == "str"
+                        else CheckerType.eq_checker
+                    ),
+                    tool_name=tool_name,
+                )
+                for arg in event.action.args or ()
+            ]
+        preprocess_scenario(
+            self.scenario,
+            judge_config=ScriptedGraphPerEventJudgeConfig(
+                event_id_to_checker_params=scripted_checks
+            ),
+            offline_validation=True,
+        )
         self.environment = (
             self.environment_factory()
             if self.environment_factory is not None
             else Environment()
         )
-        self.scenario.initialize()
         self.environment.run(self.scenario, wait_for_end=False)
         config = self.agent_config_builder.build()
         self.agent = self.agent_builder.build(config, env=self.environment)
@@ -175,13 +227,23 @@ class Gaia2SmokeHarness:
             isinstance(result, Mapping)
             and result.get("status") == "DELEGATION_EXECUTED"
         ):
-            self.agent.react_agent.execute_agent_loop()
+            return result
         return result
+
+    def orchestrator_continuation(self) -> Any:
+        self._start()
+        return self.agent.react_agent.execute_agent_loop()
 
     def native_validation(self) -> Any:
         self._start()
         result = self.scenario.validate(self.environment)
-        self._emit("RUN_COMPLETED", payload={"native_success": _native_success(result)})
+        self._emit(
+            "RUN_COMPLETED",
+            payload={
+                "native_success": _native_success(result),
+                "validator": type(self.scenario.judge).__name__,
+            },
+        )
         return result
 
     def trace_events(self) -> tuple[Any, ...]:
@@ -219,7 +281,7 @@ def pinned_gaia2_factory() -> Gaia2SmokeHarness:
     block_key = "smoke"
     trace_sink = InMemoryTraceSink(
         context=RunContext(
-            run_id=f"smoke-{scenario_id}",
+            run_id=f"smoke-{scenario_id}-{uuid4().hex[:12]}",
             scenario_id=scenario_id,
             capability=gaia["selection"]["capability"],
             model_slug=model_manifest.requested_model_slug,
@@ -348,6 +410,10 @@ def load_symbol(spec: str) -> Any:
     module_name, attribute = spec.split(":", 1)
     if not module_name or not attribute:
         raise SmokePrerequisiteError("scenario factory must use module:attribute syntax")
+    if module_name in {"__main__", "run_smoke", "scripts.run_smoke"}:
+        local_value = globals().get(attribute)
+        if callable(local_value):
+            return local_value
     value = getattr(importlib.import_module(module_name), attribute, None)
     if not callable(value):
         raise SmokePrerequisiteError(f"configured symbol is not callable: {spec}")
@@ -383,16 +449,17 @@ def check_trace_completeness(
         raise SmokePrerequisiteError("TRACE_EMPTY")
     if "RUN_STARTED" not in names or "RUN_COMPLETED" not in names:
         raise SmokePrerequisiteError("TRACE_RUN_BOUNDARIES_MISSING")
-    if "DIRECT_ACTION" not in names:
-        raise SmokePrerequisiteError("TRACE_DIRECT_ACTION_MISSING")
+    if "DIRECT_ACTION" in names:
+        raise SmokePrerequisiteError("TRACE_DELEGATION_CONTAMINATED_BY_DIRECT_ACTION")
     required = (
         "INTERVENTION_ASSIGNMENT",
         "WORKER_STARTED",
         "WORKER_TOOL_CALL",
         "WORKER_TOOL_RESULT",
         "WORKER_ARTIFACT",
-        "ORCHESTRATOR_RESUMED",
+        "WORKER_COMPLETED",
         "DELEGATION_EXECUTED",
+        "ORCHESTRATOR_RESUMED",
     )
     missing = [name for name in required if name not in names]
     if missing:
@@ -403,12 +470,26 @@ def check_trace_completeness(
     positions = [names.index(name) for name in required]
     if positions != sorted(positions):
         raise SmokePrerequisiteError("TRACE_WORKER_ORDER_INVALID")
-    request_positions = [index for index, name in enumerate(names) if name == "MODEL_REQUEST"]
-    response_positions = [index for index, name in enumerate(names) if name == "MODEL_RESPONSE"]
-    if len(request_positions) < 3 or len(response_positions) < 3:
+    request_positions = [
+        index for index, name in enumerate(names) if name == "MODEL_REQUEST"
+    ]
+    response_positions = [
+        index for index, name in enumerate(names) if name == "MODEL_RESPONSE"
+    ]
+    requests_by_id = {
+        _event_value(events[index], "openrouter_request_id"): index
+        for index in request_positions
+        if _event_value(events[index], "openrouter_request_id")
+    }
+    roundtrips = [
+        (requests_by_id[request_id], index)
+        for index in response_positions
+        if (request_id := _event_value(events[index], "openrouter_request_id"))
+        in requests_by_id
+        and requests_by_id[request_id] < index
+    ]
+    if len(request_positions) < 3 or len(roundtrips) < 2:
         raise SmokePrerequisiteError("TRACE_WORKER_MODEL_ROUNDTRIPS_MISSING")
-    if any(request >= response for request, response in zip(request_positions, response_positions)):
-        raise SmokePrerequisiteError("TRACE_MODEL_ORDER_INVALID")
     worker_started = names.index("WORKER_STARTED")
     tool_call = names.index("WORKER_TOOL_CALL")
     tool_result = names.index("WORKER_TOOL_RESULT")
@@ -416,19 +497,19 @@ def check_trace_completeness(
     delegation_position = names.index("DELEGATION_EXECUTED")
     if not any(
         worker_started < request < response < tool_call
-        for request, response in zip(request_positions, response_positions)
+        for request, response in roundtrips
     ):
         raise SmokePrerequisiteError("TRACE_WORKER_READ_MODEL_ROUNDTRIP_MISSING")
     if not any(
         tool_result < request < response < artifact_position
-        for request, response in zip(request_positions, response_positions)
+        for request, response in roundtrips
     ):
         raise SmokePrerequisiteError("TRACE_WORKER_ARTIFACT_MODEL_ROUNDTRIP_MISSING")
-    if not any(
-        delegation_position < request < response
-        for request, response in zip(request_positions, response_positions)
-    ):
-        raise SmokePrerequisiteError("TRACE_ORCHESTRATOR_CONTINUATION_MISSING")
+    resumed_position = names.index("ORCHESTRATOR_RESUMED")
+    if not any(request > resumed_position for request in request_positions):
+        raise SmokePrerequisiteError("TRACE_ORCHESTRATOR_CONTINUATION_REQUEST_MISSING")
+    if not any(response > resumed_position for _, response in roundtrips):
+        raise SmokePrerequisiteError("TRACE_ORCHESTRATOR_CONTINUATION_RESPONSE_MISSING")
     for index in response_positions:
         event = events[index]
         requested = _event_value(event, "requested_model_slug")
@@ -485,19 +566,173 @@ def _native_success(value: Any) -> bool:
     return value
 
 
-def run_configured_smoke(scenario_factory: Callable[[], Any]) -> SmokeExecution:
-    """Execute one concrete Gaia2/ARE smoke harness."""
+def _json_value(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    if is_dataclass(value):
+        return _json_value(asdict(value))
+    for method_name in ("to_dict", "model_dump", "dict"):
+        method = getattr(value, method_name, None)
+        if callable(method):
+            return _json_value(method())
+    return {"type": type(value).__name__}
+
+
+def _redact_error(value: Exception) -> str:
+    message = f"{type(value).__name__}: {value}"
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if api_key:
+        message = message.replace(api_key, "[REDACTED]")
+    return re.sub(r"\bsk-or-[A-Za-z0-9_-]+\b", "[REDACTED]", message)
+
+
+def _redacted_trace_event(event: Any) -> dict[str, Any]:
+    to_dict = getattr(event, "to_dict", None)
+    value = _json_value(to_dict() if callable(to_dict) else event)
+    if not isinstance(value, dict):
+        raise SmokePrerequisiteError("TRACE_EVENT_NOT_SERIALIZABLE")
+    if value.get("event_type") == "WORKER_TOOL_RESULT":
+        payload = value.get("payload")
+        if isinstance(payload, dict) and "result" in payload:
+            encoded = json.dumps(
+                payload["result"],
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            value["payload"] = {
+                "ok": payload.get("ok"),
+                "tool": payload.get("tool"),
+                "result_sha256": hashlib.sha256(encoded).hexdigest(),
+            }
+    return value
+
+
+def _manifest_locks(root: Path, scenario_id: str) -> dict[str, Any]:
+    gaia = json.loads(
+        (root / "configs" / "gaia2_manifest.json").read_text(encoding="utf-8")
+    )
+    openrouter = json.loads(
+        (root / "configs" / "openrouter_manifest.json").read_text(encoding="utf-8")
+    )
+    return {
+        "are_commit": LOCKED_ARE_COMMIT,
+        "gaia2_revision": gaia["gaia2_revision"],
+        "gaia2_manifest_sha256": gaia["manifest_sha256"],
+        "gaia2_dataset_sha256": gaia["dataset_sha256"],
+        "scenario_id": scenario_id,
+        "scenario_sha256": gaia["scenario_sha256"][scenario_id],
+        "model_manifest_sha256": openrouter["model_manifest"]["manifest_sha256"],
+        "provider_manifest_sha256": openrouter["provider_manifest_sha256"],
+    }
+
+
+def persist_smoke_artifacts(
+    execution: SmokeExecution,
+    events: Sequence[Any],
+    *,
+    artifact_root: str | Path,
+    harness: Gaia2SmokeHarness,
+) -> Path:
+    """Persist a redacted causal trace and outcome without prompts or model text."""
+
+    root = Path(__file__).resolve().parents[1]
+    context = getattr(harness.agent_builder.trace_sink, "context", None)
+    run_id = getattr(context, "run_id", None) or f"smoke-{uuid4().hex}"
+    scenario_id = getattr(context, "scenario_id", None)
+    experiment = harness.agent_builder.experiment_config
+    output_dir = Path(artifact_root) / str(run_id)
+    output_dir.mkdir(parents=True, exist_ok=False)
+
+    trace_lines = []
+    for event in events:
+        trace_lines.append(
+            json.dumps(
+                _redacted_trace_event(event),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+        )
+    (output_dir / "trace.jsonl").write_text(
+        "\n".join(trace_lines) + ("\n" if trace_lines else ""),
+        encoding="utf-8",
+    )
+    summary = {
+        "infrastructure_pass": execution.infrastructure_pass,
+        "native_validation_completed": execution.native_validation_completed,
+        "gaia2_success": execution.gaia2_success,
+        "failure_stage": execution.failure_stage,
+        "error": execution.error,
+        "model": experiment.model_config.model_slug,
+        "provider": experiment.model_config.provider,
+        "scenario_id": scenario_id,
+        "run_id": run_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    (output_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    validation = {
+        "completed": execution.native_validation_completed,
+        "success": execution.gaia2_success,
+        "validator": type(getattr(harness, "scenario", None).judge).__name__
+        if getattr(getattr(harness, "scenario", None), "judge", None) is not None
+        else None,
+        "result": _json_value(execution.validation_result),
+    }
+    (output_dir / "validation.json").write_text(
+        json.dumps(validation, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "manifest-locks.json").write_text(
+        json.dumps(_manifest_locks(root, str(scenario_id)), indent=2, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    return output_dir
+
+
+def run_configured_smoke(
+    scenario_factory: Callable[[], Any],
+    *,
+    artifact_root: str | Path | None = None,
+) -> SmokeExecution:
+    """Run isolated native-tool and delegation smokes on fresh environments."""
+
+    direct_harness = scenario_factory()
+    if not isinstance(direct_harness, Gaia2SmokeHarness):
+        raise SmokePrerequisiteError("scenario factory must return Gaia2SmokeHarness")
+    try:
+        direct = direct_harness.direct_action()
+    finally:
+        direct_harness.close()
 
     harness = scenario_factory()
     if not isinstance(harness, Gaia2SmokeHarness):
-        raise SmokePrerequisiteError(
-            "scenario factory must return Gaia2SmokeHarness"
-        )
+        raise SmokePrerequisiteError("scenario factory must return Gaia2SmokeHarness")
+    delegated: Any = None
+    validation: Any = None
+    infrastructure_pass = False
+    native_validation_completed = False
+    gaia2_success = False
+    failure_stage: str | None = "DELEGATION_EXECUTION"
+    error: str | None = None
+    trace_names: tuple[str, ...] = ()
+    events: tuple[Any, ...] = ()
+    artifact_dir: str | None = None
     try:
-        direct = harness.direct_action()
         delegated = harness.forced_delegation()
         if not isinstance(delegated, Mapping) or delegated.get("status") != "DELEGATION_EXECUTED":
             raise SmokePrerequisiteError("SMOKE_DELEGATION_NOT_EXECUTED")
+        failure_stage = "WORKER_EXECUTION"
         worker_result = delegated.get("artifact")
         if (
             not isinstance(worker_result, Mapping)
@@ -506,27 +741,63 @@ def run_configured_smoke(scenario_factory: Callable[[], Any]) -> SmokeExecution:
         ):
             failure = worker_result.get("failure") if isinstance(worker_result, Mapping) else None
             raise SmokePrerequisiteError(f"SMOKE_WORKER_NOT_COMPLETED:{failure}")
+        failure_stage = "ORCHESTRATOR_CONTINUATION"
+        harness.orchestrator_continuation()
+        failure_stage = "NATIVE_VALIDATION"
         validation = harness.native_validation()
-        native_success = _native_success(validation)
-        if not native_success:
-            raise SmokePrerequisiteError("NATIVE_VALIDATION_FAILED")
+        gaia2_success = _native_success(validation)
+        native_validation_completed = True
         events = harness.trace_events()
         experiment = harness.agent_builder.experiment_config
         model = experiment.model_config.model_slug
         provider = experiment.model_config.provider
-        return SmokeExecution(
+        failure_stage = "TRACE_AUDIT"
+        trace_names = check_trace_completeness(
+            events,
+            expected_model=model,
+            expected_provider=provider,
+        )
+        infrastructure_pass = True
+        failure_stage = None if gaia2_success else "ORCHESTRATOR_REASONING"
+    except Exception as exc:
+        error = _redact_error(exc)
+        events = harness.trace_events()
+    execution = SmokeExecution(
             direct,
             delegated,
             validation,
-            native_success,
-            check_trace_completeness(
-                events,
-                expected_model=model,
-                expected_provider=provider,
-            ),
+            infrastructure_pass,
+            native_validation_completed,
+            gaia2_success,
+            failure_stage,
+            trace_names,
+            error,
         )
+    try:
+        if artifact_root is not None:
+            artifact_dir = str(
+                persist_smoke_artifacts(
+                    execution,
+                    events,
+                    artifact_root=artifact_root,
+                    harness=harness,
+                )
+            )
+            execution = SmokeExecution(
+                execution.direct_action_result,
+                execution.delegation_result,
+                execution.validation_result,
+                execution.infrastructure_pass,
+                execution.native_validation_completed,
+                execution.gaia2_success,
+                execution.failure_stage,
+                execution.trace_event_names,
+                execution.error,
+                artifact_dir,
+            )
     finally:
         harness.close()
+    return execution
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -535,6 +806,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config-dir", default=str(root / "configs"))
     parser.add_argument("--scenario-factory", required=True)
     parser.add_argument("--are-revision", default=os.environ.get("ARE_COMMIT"))
+    parser.add_argument("--artifact-dir", default=str(root / "artifacts" / "smoke"))
     args = parser.parse_args(argv)
     try:
         experiment, gaia2_manifest, providers = load_configurations(args.config_dir)
@@ -545,12 +817,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             scenario_factory_spec=args.scenario_factory,
             are_revision=args.are_revision,
         )
-        execution = run_configured_smoke(load_symbol(args.scenario_factory))
+        execution = run_configured_smoke(
+            load_symbol(args.scenario_factory),
+            artifact_root=args.artifact_dir,
+        )
     except (OSError, SmokePrerequisiteError, TypeError, ValueError) as exc:
-        print(json.dumps({"passed": False, "error": str(exc)}, sort_keys=True))
+        print(json.dumps({"passed": False, "error": _redact_error(exc)}, sort_keys=True))
         return 1
-    print(json.dumps({"passed": True, "trace_event_names": execution.trace_event_names}, sort_keys=True))
-    return 0
+    print(
+        json.dumps(
+            {
+                "passed": execution.infrastructure_pass,
+                "infrastructure_pass": execution.infrastructure_pass,
+                "native_validation_completed": execution.native_validation_completed,
+                "gaia2_success": execution.gaia2_success,
+                "failure_stage": execution.failure_stage,
+                "error": execution.error,
+                "artifact_dir": execution.artifact_dir,
+                "trace_event_names": execution.trace_event_names,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0 if execution.infrastructure_pass else 1
 
 
 if __name__ == "__main__":

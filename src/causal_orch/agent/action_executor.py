@@ -25,6 +25,7 @@ class InterventionActionExecutor(JsonActionExecutor):
         super().__init__(tools=tools, **kwargs)
         self.intervention_gate = intervention_gate
         self.trace_sink = trace_sink
+        self.delegation_handoff_pending = False
 
     def execute_parsed_action(
         self,
@@ -56,6 +57,11 @@ class InterventionActionExecutor(JsonActionExecutor):
             )
         )
         observation = self.intervention_gate.handle_proposal(arguments)
+        if (
+            isinstance(observation, dict)
+            and observation.get("status") == "DELEGATION_EXECUTED"
+        ):
+            self.delegation_handoff_pending = True
         append_agent_log(
             get_observation_log(
                 make_timestamp(),

@@ -152,7 +152,7 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(result, {"status": "ok"})
 
     def test_builder_wires_fake_engine_gate_and_pinned_lifecycle(self):
-        experiment = make_experiment()
+        experiment = make_experiment(max_iterations=12)
         env = FakeEnvironment()
         engine_calls = []
         gate_calls = []
@@ -178,6 +178,8 @@ class BuilderTests(unittest.TestCase):
 
         self.assertIsInstance(built, ARESimulationAgent)
         self.assertIsInstance(built.react_agent, CausalOrchestrator)
+        self.assertEqual(built.max_iterations, 12)
+        self.assertEqual(built.react_agent.max_iterations, 12)
         self.assertEqual(len(engine_calls), 1)
         self.assertIs(engine_calls[0]["config"], experiment.model_config)
         self.assertEqual(gate_calls[0]["block_key"], "block")
@@ -262,6 +264,37 @@ class BuilderTests(unittest.TestCase):
             orchestrator.step()
         self.assertIn("task", orchestrator.context_registry)
         self.assertIn('"task"', prompts[0])
+
+    def test_orchestrator_resumed_is_emitted_at_the_post_delegation_model_boundary(self):
+        sink = InMemoryTraceSink()
+        gate = type("Gate", (), {"handle_proposal": lambda self, _proposal: {}})()
+        executor = __import__(
+            "causal_orch.agent.action_executor", fromlist=["InterventionActionExecutor"]
+        ).InterventionActionExecutor(intervention_gate=gate, trace_sink=sink)
+        executor.delegation_handoff_pending = True
+
+        def engine(*_args, **_kwargs):
+            self.assertEqual(
+                sink.events[-1].event_type.value,
+                "ORCHESTRATOR_RESUMED",
+            )
+            return (
+                'Thought: done\nAction: {"action":"missing","action_input":{}}',
+                {},
+            )
+
+        orchestrator = CausalOrchestrator(
+            llm_engine=engine,
+            action_executor=executor,
+            max_iterations=1,
+        )
+        orchestrator.initialize()
+        orchestrator.append_agent_log(
+            TaskLog(content="Continue after delegation", timestamp=0, agent_id="test")
+        )
+        with self.assertRaises(Exception):
+            orchestrator.step()
+        self.assertFalse(executor.delegation_handoff_pending)
 
     def test_config_rejects_manifest_provider_mismatch(self):
         with self.assertRaises(ValueError):

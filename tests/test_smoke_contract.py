@@ -1,6 +1,8 @@
 import importlib.util
+import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
 
@@ -60,11 +62,20 @@ class SmokeContractTests(unittest.TestCase):
                 are_revision=smoke.LOCKED_ARE_COMMIT,
             )
 
+    def test_cli_factory_spec_resolves_without_reimporting_the_script(self):
+        smoke = load_smoke()
+        self.assertIs(
+            smoke.load_symbol("scripts.run_smoke:pinned_gaia2_factory"),
+            smoke.pinned_gaia2_factory,
+        )
+
     def test_required_harness_paths_native_validation_and_trace_are_executed(self):
         smoke = load_smoke()
         calls = []
 
         class Harness(smoke.Gaia2SmokeHarness):
+            validation_success = True
+
             def __init__(self):
                 self.agent_builder = SimpleNamespace(
                     experiment_config=SimpleNamespace(
@@ -88,23 +99,33 @@ class SmokeContractTests(unittest.TestCase):
                     },
                 }
 
+            def orchestrator_continuation(self):
+                calls.append("continuation")
+
             def native_validation(self):
                 calls.append("validation")
-                return {"success": True}
+                return {"success": self.validation_success}
 
             def trace_events(self):
                 calls.append("trace")
                 return [
                     {"event_type": "RUN_STARTED"},
-                    {"event_type": "DIRECT_ACTION"},
                     {
                         "event_type": "INTERVENTION_ASSIGNMENT",
                         "treatment_assignment": "EXECUTE",
                     },
                     {"event_type": "WORKER_STARTED"},
-                    {"event_type": "MODEL_REQUEST"},
+                    {
+                        "event_type": "MODEL_REQUEST",
+                        "openrouter_request_id": "failed-worker-attempt",
+                    },
+                    {
+                        "event_type": "MODEL_REQUEST",
+                        "openrouter_request_id": "worker-read",
+                    },
                     {
                         "event_type": "MODEL_RESPONSE",
+                        "openrouter_request_id": "worker-read",
                         "requested_model_slug": "model-1",
                         "returned_model_slug": "model-1",
                         "provider_slug": "provider-1",
@@ -115,9 +136,13 @@ class SmokeContractTests(unittest.TestCase):
                         "event_id": "result-1",
                         "error_type": None,
                     },
-                    {"event_type": "MODEL_REQUEST"},
+                    {
+                        "event_type": "MODEL_REQUEST",
+                        "openrouter_request_id": "worker-artifact",
+                    },
                     {
                         "event_type": "MODEL_RESPONSE",
+                        "openrouter_request_id": "worker-artifact",
                         "requested_model_slug": "model-1",
                         "returned_model_slug": "model-1",
                         "provider_slug": "provider-1",
@@ -144,11 +169,16 @@ class SmokeContractTests(unittest.TestCase):
                             }
                         },
                     },
-                    {"event_type": "ORCHESTRATOR_RESUMED"},
+                    {"event_type": "WORKER_COMPLETED"},
                     {"event_type": "DELEGATION_EXECUTED"},
-                    {"event_type": "MODEL_REQUEST"},
+                    {"event_type": "ORCHESTRATOR_RESUMED"},
+                    {
+                        "event_type": "MODEL_REQUEST",
+                        "openrouter_request_id": "orchestrator",
+                    },
                     {
                         "event_type": "MODEL_RESPONSE",
+                        "openrouter_request_id": "orchestrator",
                         "requested_model_slug": "model-1",
                         "returned_model_slug": "model-1",
                         "provider_slug": "provider-1",
@@ -161,9 +191,30 @@ class SmokeContractTests(unittest.TestCase):
 
         execution = smoke.run_configured_smoke(Harness)
 
-        self.assertEqual(calls, ["direct", "delegation", "validation", "trace", "close"])
+        self.assertEqual(
+            calls,
+            [
+                "direct",
+                "close",
+                "delegation",
+                "continuation",
+                "validation",
+                "trace",
+                "close",
+            ],
+        )
+        self.assertTrue(execution.infrastructure_pass)
+        self.assertTrue(execution.native_validation_completed)
+        self.assertTrue(execution.gaia2_success)
         self.assertTrue(execution.native_success)
         self.assertEqual(execution.trace_event_names[0], "RUN_STARTED")
+
+        Harness.validation_success = False
+        wrong_answer = smoke.run_configured_smoke(Harness)
+        self.assertTrue(wrong_answer.infrastructure_pass)
+        self.assertTrue(wrong_answer.native_validation_completed)
+        self.assertFalse(wrong_answer.gaia2_success)
+        self.assertEqual(wrong_answer.failure_stage, "ORCHESTRATOR_REASONING")
 
     def test_incomplete_trace_is_rejected(self):
         smoke = load_smoke()
@@ -178,7 +229,6 @@ class SmokeContractTests(unittest.TestCase):
             smoke.check_trace_completeness(
                 [
                     {"event_type": "RUN_STARTED"},
-                    {"event_type": "DIRECT_ACTION"},
                     {
                         "event_type": "INTERVENTION_ASSIGNMENT",
                         "treatment_assignment": "SUPPRESS",
@@ -187,6 +237,81 @@ class SmokeContractTests(unittest.TestCase):
                     {"event_type": "RUN_COMPLETED"},
                 ]
             )
+
+    def test_persisted_smoke_report_is_redacted_and_complete(self):
+        smoke = load_smoke()
+        from causal_orch.tracing.context import RunContext
+        from causal_orch.tracing.events import OrchestrationEvent
+        from causal_orch.tracing.sink import InMemoryTraceSink
+
+        scenario_id = "scenario_universe_28_2nr5po"
+        sink = InMemoryTraceSink(
+            context=RunContext(
+                run_id="smoke-report-test",
+                scenario_id=scenario_id,
+            )
+        )
+        sink.append(OrchestrationEvent(event_type="RUN_STARTED"))
+        sink.append(
+            OrchestrationEvent(
+                event_type="WORKER_TOOL_RESULT",
+                payload={
+                    "ok": True,
+                    "tool": "Emails__list_emails",
+                    "result": {"content": "private synthetic email body"},
+                },
+            )
+        )
+        harness = SimpleNamespace(
+            agent_builder=SimpleNamespace(
+                trace_sink=sink,
+                experiment_config=SimpleNamespace(
+                    model_config=SimpleNamespace(
+                        model_slug="model-1",
+                        provider="provider-1",
+                    )
+                ),
+            )
+        )
+        execution = smoke.SmokeExecution(
+            direct_action_result="ok",
+            delegation_result={},
+            validation_result={"success": False},
+            infrastructure_pass=True,
+            native_validation_completed=True,
+            gaia2_success=False,
+            failure_stage="ORCHESTRATOR_REASONING",
+            trace_event_names=("RUN_STARTED",),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output = smoke.persist_smoke_artifacts(
+                execution,
+                sink.events,
+                artifact_root=directory,
+                harness=harness,
+            )
+            self.assertEqual(
+                {path.name for path in output.iterdir()},
+                {
+                    "trace.jsonl",
+                    "summary.json",
+                    "validation.json",
+                    "manifest-locks.json",
+                },
+            )
+            summary = json.loads(
+                (output / "summary.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(summary["infrastructure_pass"])
+            self.assertFalse(summary["gaia2_success"])
+            self.assertEqual(summary["failure_stage"], "ORCHESTRATOR_REASONING")
+            persisted = "".join(
+                path.read_text(encoding="utf-8") for path in output.iterdir()
+            )
+            self.assertNotIn("OPENROUTER_API_KEY", persisted)
+            self.assertNotIn("sk-or-", persisted)
+            self.assertNotIn("private synthetic email body", persisted)
+            self.assertIn("result_sha256", persisted)
 
 
 if __name__ == "__main__":

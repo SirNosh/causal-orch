@@ -8,6 +8,7 @@ from typing import Any, Callable, Mapping
 
 from are.simulation.agents.agent_log import SystemPromptLog
 from are.simulation.agents.default_agent.base_agent import BaseAgent
+from are.simulation.agents.default_agent.tools.action_executor import ParsedAction
 from are.simulation.agents.default_agent.steps.are_simulation import (
     get_are_simulation_update_pre_step,
 )
@@ -19,6 +20,7 @@ from are.simulation.agents.default_agent.prompts.system_prompt import (
 )
 
 from causal_orch.runtime.context_registry import TraceContextRegistry
+from causal_orch.tracing.events import EventName, OrchestrationEvent
 
 
 _DELEGATE_PROMPT_START = "<!-- causal-orch delegation instructions -->"
@@ -166,6 +168,19 @@ class CausalOrchestrator(BaseAgent):
         elif log_type == "subagent":
             self.context_registry.register(f"artifact:{log.id}", content)
 
+    def send_message_to_user(self, content: str) -> None:
+        """Preserve ARE termination for the intervention executor subclass."""
+
+        tool_name = "AgentUserInterface__send_message_to_user"
+        if tool_name not in self.tools:
+            raise ValueError(f"{tool_name} is not in agent tools")
+        self.action_executor.execute_parsed_action(
+            ParsedAction(tool_name=tool_name, arguments={"content": content}),
+            self.append_agent_log,
+            self.make_timestamp,
+            self.agent_id,
+        )
+
     def step(self) -> None:
         """Refresh the bounded delegation block immediately before each LLM call."""
 
@@ -175,4 +190,13 @@ class CausalOrchestrator(BaseAgent):
             if isinstance(log, SystemPromptLog):
                 log.content = prompt
                 break
+        if self.action_executor.delegation_handoff_pending:
+            self.action_executor.trace_sink.append(
+                OrchestrationEvent(
+                    event_type=EventName.ORCHESTRATOR_RESUMED,
+                    actor_id=self.agent_id,
+                    actor_role="orchestrator",
+                )
+            )
+            self.action_executor.delegation_handoff_pending = False
         super().step()
