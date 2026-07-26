@@ -130,9 +130,23 @@ class SmokeContractTests(unittest.TestCase):
                 calls.append("delegation")
                 return {
                     "status": "DELEGATION_EXECUTED",
-                    "artifact": {
+                    "worker_episode": {
                         "status": "WORKER_COMPLETED",
-                        "artifact": {"artifact_type": "EVIDENCE_REPORT"},
+                        "episode": {
+                            "objective": "Find the record.",
+                            "status": "COMPLETED",
+                            "final_text": "Found it.",
+                            "tool_events": [
+                                {
+                                    "tool_name": "read",
+                                    "tool_call_id": "call-1",
+                                    "result_ref": "worker_tool_result:result-1",
+                                }
+                            ],
+                            "completion_reason": "MODEL_FINAL_TEXT",
+                            "token_usage": {"generated": 10},
+                            "timing": {"wall_seconds": 0.1},
+                        },
                     },
                 }
 
@@ -180,34 +194,32 @@ class SmokeContractTests(unittest.TestCase):
                     },
                     {
                         "event_type": "MODEL_REQUEST",
-                        "openrouter_request_id": "worker-artifact",
+                        "openrouter_request_id": "worker-final-text",
                     },
                     {
                         "event_type": "MODEL_RESPONSE",
-                        "openrouter_request_id": "worker-artifact",
+                        "openrouter_request_id": "worker-final-text",
                         "requested_model_slug": "model-1",
                         "returned_model_slug": "model-1",
                         "provider_slug": "provider-1",
                     },
                     {
-                        "event_type": "WORKER_ARTIFACT",
+                        "event_type": "WORKER_EPISODE",
                         "payload": {
-                            "artifact": {
-                                "artifact_type": "EVIDENCE_REPORT",
+                            "episode": {
                                 "objective": "Find the record.",
-                                "status": "COMPLETE",
-                                "findings": [
+                                "status": "COMPLETED",
+                                "final_text": "Found it.",
+                                "tool_events": [
                                     {
-                                        "claim": "Found it.",
-                                        "evidence_refs": [
-                                            "worker_tool_result:result-1"
-                                        ],
-                                        "confidence": "HIGH",
+                                        "tool_name": "read",
+                                        "tool_call_id": "call-1",
+                                        "result_ref": "worker_tool_result:result-1",
                                     }
                                 ],
-                                "uncertainties": [],
-                                "contradictions": [],
-                                "recommended_next_action": None,
+                                "completion_reason": "MODEL_FINAL_TEXT",
+                                "token_usage": {"generated": 10},
+                                "timing": {"wall_seconds": 0.1},
                             }
                         },
                     },

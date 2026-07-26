@@ -507,8 +507,11 @@ class LocalLlamaLLMEngine(LLMEngine):
         tool_choice: Any = "auto",
         max_tokens: int | None = None,
         additional_trace_tags: Any = None,
+        interface_label: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        if tool_choice == "required":
+        if interface_label is not None:
+            interface_label = str(interface_label)
+        elif tool_choice == "required":
             interface_label = "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED"
         elif isinstance(tool_choice, Mapping):
             function = tool_choice.get("function")

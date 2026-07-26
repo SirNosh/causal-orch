@@ -13,8 +13,10 @@ from causal_orch.agent.worker import (
     DelegationWorkerAdapter,
     FreshReadOnlyWorker,
     NativeTypedWorkerRunner,
+    PlainTextWorkerRunner,
     ReturnArtifactTool,
     TreatmentFailureReason,
+    WorkerEpisode,
     native_return_artifact_tool_schema,
 )
 from causal_orch.runtime.budgets import (
@@ -313,6 +315,128 @@ class WorkerReadOnlyTests(unittest.TestCase):
         self.assertEqual(
             sink.events[-1].error_type,
             "PROTOCOL_VIOLATION_NO_TOOL_CALL",
+        )
+
+    def test_plain_text_worker_calls_tool_then_returns_harness_episode(self):
+        class ReadTool:
+            name = "FileSystem__read_file"
+            description = "Read a record."
+            inputs = {"path": {"type": "string", "description": "Path"}}
+
+            def __call__(self, **arguments):
+                self.arguments = arguments
+                return {
+                    "value": "record-42",
+                    "evidence_ref": "worker_tool_result:event-42",
+                }
+
+        class NativeEngine:
+            def __init__(self):
+                self.calls = []
+
+            def native_tool_completion(self, messages, *, tools, **kwargs):
+                self.calls.append((list(messages), tools, kwargs))
+                if len(self.calls) == 1:
+                    return (
+                        {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "read-call",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "FileSystem__read_file",
+                                        "arguments": {"path": "record"},
+                                    },
+                                }
+                            ],
+                        },
+                        {"completion_tokens": 20, "completion_duration": 0.25},
+                    )
+                self.test_case.assertEqual(messages[-1]["role"], "tool")
+                self.test_case.assertEqual(
+                    messages[-1]["tool_call_id"], "read-call"
+                )
+                return (
+                    {
+                        "role": "assistant",
+                        "content": "The record is record-42.",
+                        "tool_calls": [],
+                    },
+                    {"completion_tokens": 30, "completion_duration": 0.5},
+                )
+
+        engine = NativeEngine()
+        engine.test_case = self
+        read_tool = ReadTool()
+        result = PlainTextWorkerRunner(engine)(
+            {
+                "objective": "Find the record.",
+                "completion_criterion": "Name the record.",
+                "context": {"task": "Find the record."},
+                "permitted_tools": [],
+                "budgets": {"max_steps": 8, "max_output_tokens": 2000},
+            },
+            (read_tool,),
+        )
+
+        self.assertEqual(read_tool.arguments, {"path": "record"})
+        self.assertEqual(result.generated_tokens, 50)
+        self.assertEqual(result.wall_seconds, 0.75)
+        self.assertEqual(result.tool_events[0]["tool_call_id"], "read-call")
+        self.assertEqual(
+            result.tool_events[0]["result_ref"],
+            "worker_tool_result:event-42",
+        )
+        self.assertEqual(
+            engine.calls[0][2]["interface_label"],
+            "PLAIN_TEXT_WORKER_EPISODE",
+        )
+        self.assertNotIn("return_artifact", str(engine.calls[0][1]))
+
+    def test_worker_adapter_accepts_plain_text_episode_without_artifact_validation(self):
+        sink = InMemoryTraceSink()
+        episode = WorkerEpisode(
+            objective="Find the record.",
+            final_text="The record is record-42.",
+            tool_events=(
+                {
+                    "tool_name": "FileSystem__read_file",
+                    "tool_call_id": "read-call",
+                    "result_ref": "worker_tool_result:event-42",
+                },
+            ),
+            generated_tokens=50,
+            wall_seconds=0.75,
+        )
+        result = DelegationWorkerAdapter(
+            environment={"apps": {}},
+            available_tools=(),
+            context_resolver={"task": "Find the record."},
+            worker_runner=lambda _payload, _tools: episode,
+            trace_sink=sink,
+        )(
+            {
+                "objective": "Find the record.",
+                "reason_code": "INFORMATION_GAP",
+                "context_refs": ["task"],
+                "allowed_read_tools": [],
+                "completion_criterion": "Name the record.",
+            }
+        )
+
+        self.assertEqual(result["status"], "WORKER_COMPLETED")
+        self.assertEqual(result["episode"]["final_text"], "The record is record-42.")
+        self.assertNotIn("artifact", result)
+        self.assertEqual(
+            [event.event_type for event in sink.events],
+            [
+                EventName.WORKER_STARTED,
+                EventName.WORKER_STATE_GUARD,
+                EventName.WORKER_EPISODE,
+                EventName.WORKER_COMPLETED,
+            ],
         )
 
     def test_default_base_agent_worker_emits_events_invokes_read_tool_and_pauses_per_generation(self):

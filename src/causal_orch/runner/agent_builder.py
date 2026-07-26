@@ -19,7 +19,7 @@ from causal_orch.models.local_llama_engine import LocalLlamaLLMEngine
 from causal_orch.models.manifests import LocalLlamaConfig
 from causal_orch.runtime.intervention import DelegationInterventionGate
 from causal_orch.runtime.read_only_tools import MANUALLY_AUDITED_ALLOWLIST, audit_tool
-from causal_orch.agent.worker import DelegationWorkerAdapter, NativeTypedWorkerRunner
+from causal_orch.agent.worker import DelegationWorkerAdapter, PlainTextWorkerRunner
 
 from .config_builder import (
     CAUSAL_AGENT_NAME,
@@ -175,9 +175,8 @@ class CausalAgentBuilder(AbstractAgentBuilder):
                 and worker_runner is None
                 and callable(getattr(llm_engine, "native_tool_completion", None))
             ):
-                worker_runner = NativeTypedWorkerRunner(
+                worker_runner = PlainTextWorkerRunner(
                     llm_engine,
-                    trace_sink=self.trace_sink,
                     pause_env=env.pause,
                     resume_env=env.resume_with_offset,
                 )

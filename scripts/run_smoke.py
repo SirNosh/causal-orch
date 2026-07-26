@@ -187,7 +187,11 @@ class Gaia2SmokeHarness:
                     agent_id=self.agent.react_agent.agent_id,
                 )
             )
-            self.agent.react_agent.refresh_delegation_prompt()
+            refresh = getattr(
+                self.agent.react_agent, "refresh_delegation_prompt", None
+            )
+            if callable(refresh):
+                refresh()
         self._emit("RUN_STARTED")
         self._started = True
 
@@ -467,7 +471,6 @@ def check_trace_completeness(
     expected_model: str | None = None,
     expected_provider: str | None = None,
 ) -> tuple[str, ...]:
-    from causal_orch.agent.schemas import EvidenceReport
     from causal_orch.models.openrouter_engine import MODEL_CALL_FAILURE_TYPES
 
     names = tuple(_event_name(event) for event in events)
@@ -482,7 +485,7 @@ def check_trace_completeness(
         "WORKER_STARTED",
         "WORKER_TOOL_CALL",
         "WORKER_TOOL_RESULT",
-        "WORKER_ARTIFACT",
+        "WORKER_EPISODE",
         "WORKER_COMPLETED",
         "DELEGATION_EXECUTED",
         "ORCHESTRATOR_RESUMED",
@@ -540,7 +543,7 @@ def check_trace_completeness(
     worker_started = names.index("WORKER_STARTED")
     tool_call = names.index("WORKER_TOOL_CALL")
     tool_result = names.index("WORKER_TOOL_RESULT")
-    artifact_position = names.index("WORKER_ARTIFACT")
+    episode_position = names.index("WORKER_EPISODE")
     delegation_position = names.index("DELEGATION_EXECUTED")
     if not any(
         worker_started < request < response < tool_call
@@ -548,10 +551,10 @@ def check_trace_completeness(
     ):
         raise SmokePrerequisiteError("TRACE_WORKER_READ_MODEL_ROUNDTRIP_MISSING")
     if not any(
-        tool_result < request < response < artifact_position
+        tool_result < request < response < episode_position
         for request, response in roundtrips
     ):
-        raise SmokePrerequisiteError("TRACE_WORKER_ARTIFACT_MODEL_ROUNDTRIP_MISSING")
+        raise SmokePrerequisiteError("TRACE_WORKER_FINAL_TEXT_ROUNDTRIP_MISSING")
     resumed_position = names.index("ORCHESTRATOR_RESUMED")
     if not any(request > resumed_position for request in request_positions):
         raise SmokePrerequisiteError("TRACE_ORCHESTRATOR_CONTINUATION_REQUEST_MISSING")
@@ -584,14 +587,21 @@ def check_trace_completeness(
         if _event_name(event) == "WORKER_TOOL_RESULT"
         and _event_value(event, "error_type") is None
     }
-    artifact_event = events[names.index("WORKER_ARTIFACT")]
-    artifact_payload = _event_value(artifact_event, "payload", {})
-    artifact = EvidenceReport.from_dict(artifact_payload.get("artifact"))
-    citations = {
-        ref for finding in artifact.findings for ref in finding.evidence_refs
-    }
-    if not citations.intersection(result_events):
-        raise SmokePrerequisiteError("TRACE_ARTIFACT_TOOL_EVIDENCE_MISSING")
+    episode_event = events[names.index("WORKER_EPISODE")]
+    episode_payload = _event_value(episode_event, "payload", {})
+    episode = episode_payload.get("episode")
+    if not isinstance(episode, Mapping):
+        raise SmokePrerequisiteError("TRACE_WORKER_EPISODE_INVALID")
+    final_text = episode.get("final_text")
+    tool_events = episode.get("tool_events")
+    if not isinstance(final_text, str) or not final_text.strip():
+        raise SmokePrerequisiteError("TRACE_WORKER_FINAL_TEXT_MISSING")
+    if not isinstance(tool_events, list) or not any(
+        isinstance(item, Mapping)
+        and item.get("result_ref") in result_events
+        for item in tool_events
+    ):
+        raise SmokePrerequisiteError("TRACE_EPISODE_TOOL_EVIDENCE_MISSING")
     for event in events:
         if _event_value(event, "protocol_violation") == "STATE_DIFF_VIOLATION":
             raise SmokePrerequisiteError("TRACE_WORKER_STATE_WRITE_VIOLATION")
@@ -724,7 +734,7 @@ def persist_smoke_artifacts(
     )
     react_agent = getattr(getattr(harness, "agent", None), "react_agent", None)
     worker_interface = (
-        "NATIVE_TYPED_TOOL_INTERFACE_NAMED_FINALIZER"
+        "PLAIN_TEXT_WORKER_EPISODE"
         if callable(
             getattr(
                 getattr(react_agent, "llm_engine", None),
@@ -904,11 +914,11 @@ def run_configured_smoke(
         if not isinstance(delegated, Mapping) or delegated.get("status") != "DELEGATION_EXECUTED":
             raise SmokePrerequisiteError("SMOKE_DELEGATION_NOT_EXECUTED")
         failure_stage = "WORKER_EXECUTION"
-        worker_result = delegated.get("artifact")
+        worker_result = delegated.get("worker_episode")
         if (
             not isinstance(worker_result, Mapping)
             or worker_result.get("status") != "WORKER_COMPLETED"
-            or not isinstance(worker_result.get("artifact"), Mapping)
+            or not isinstance(worker_result.get("episode"), Mapping)
         ):
             failure = worker_result.get("failure") if isinstance(worker_result, Mapping) else None
             raise SmokePrerequisiteError(f"SMOKE_WORKER_NOT_COMPLETED:{failure}")
@@ -1031,6 +1041,7 @@ def qualification_attempt_metrics(
         for event in events
     )
     worker_artifact_valid = "WORKER_ARTIFACT" in names
+    worker_episode_valid = "WORKER_EPISODE" in names
     worker_started = "WORKER_STARTED" in names
     artifact_validations = [
         event for event in events if _event_name(event) == "ARTIFACT_VALIDATION"
@@ -1101,6 +1112,7 @@ def qualification_attempt_metrics(
         "artifact_validator_reached": artifact_validator_reached,
         "artifact_schema_valid": artifact_schema_valid,
         "worker_artifact_valid": worker_artifact_valid,
+        "worker_episode_valid": worker_episode_valid,
         "delegation_completed": delegation_completed,
         "orchestrator_resumed": orchestrator_resumed,
         "continuation_response_accepted": continuation_response_accepted,

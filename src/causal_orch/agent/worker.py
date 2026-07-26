@@ -93,6 +93,28 @@ class WorkerResult:
         }
 
 
+@dataclasses.dataclass(frozen=True)
+class WorkerEpisode:
+    """Harness-authored record of one plain-text worker episode."""
+
+    objective: str
+    final_text: str
+    tool_events: tuple[Mapping[str, str], ...]
+    generated_tokens: int
+    wall_seconds: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "objective": self.objective,
+            "status": "COMPLETED",
+            "final_text": self.final_text,
+            "tool_events": [dict(event) for event in self.tool_events],
+            "completion_reason": "MODEL_FINAL_TEXT",
+            "token_usage": {"generated": self.generated_tokens},
+            "timing": {"wall_seconds": self.wall_seconds},
+        }
+
+
 class ReturnArtifactTool(Tool):
     """ARE-native non-environment tool that validates the worker artifact."""
 
@@ -478,6 +500,22 @@ def native_worker_prompt(payload: Mapping[str, Any]) -> str:
     )
 
 
+def plain_text_worker_prompt(payload: Mapping[str, Any]) -> str:
+    return "\n".join(
+        (
+            "You are a fresh, bounded read-only worker.",
+            f"Objective: {payload['objective']}",
+            f"Completion criterion: {payload['completion_criterion']}",
+            f"Selected context: {json.dumps(payload['context'], sort_keys=True)}",
+            f"Permitted tools: {json.dumps(payload['permitted_tools'], sort_keys=True)}",
+            "Use native function tools when needed.",
+            "Do not write, delete, update, send messages, contact the user, wait, control the environment, recurse, or delegate.",
+            "When the bounded objective is complete, reply with concise ordinary text for the orchestrator.",
+            "Do not produce an EvidenceReport or other JSON envelope.",
+        )
+    )
+
+
 class _TracedWorkerAgent(BaseAgent):
     def __init__(self, *args: Any, trace_sink: Any | None = None, **kwargs: Any) -> None:
         self.trace_sink = trace_sink
@@ -838,6 +876,135 @@ class NativeTypedWorkerRunner:
         )
 
 
+class PlainTextWorkerRunner:
+    """Bounded read-only native-tool loop with a harness-authored episode."""
+
+    def __init__(
+        self,
+        engine: Any,
+        *,
+        pause_env: Callable[[], None] | None = None,
+        resume_env: Callable[[float], None] | None = None,
+        generation_seconds: float = 5.0,
+    ) -> None:
+        if not callable(getattr(engine, "native_tool_completion", None)):
+            raise TypeError("engine must provide native_tool_completion()")
+        self.engine = engine
+        self.pause_env = pause_env
+        self.resume_env = resume_env
+        self.generation_seconds = generation_seconds
+
+    def __call__(
+        self,
+        payload: Mapping[str, Any],
+        tools: tuple[Any, ...],
+    ) -> WorkerEpisode:
+        budgets = WorkerBudgets.from_mapping(payload["budgets"])
+        budget_state = _WorkerBudgetState(budgets)
+        tool_map = {str(tool.name): tool for tool in tools}
+        native_tools = [_native_tool_schema(tool) for tool in tools]
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": plain_text_worker_prompt(payload)},
+            {
+                "role": "user",
+                "content": "Complete the bounded objective.",
+            },
+        ]
+        tool_events: list[dict[str, str]] = []
+        wall_seconds = 0.0
+        for _step in range(budgets.max_steps):
+            budget_before = max(
+                0, budgets.max_output_tokens - budget_state.output_tokens_used
+            )
+            if budget_before < 1:
+                raise BudgetExceededError(
+                    BudgetExceededResult(
+                        "max_output_tokens",
+                        0,
+                        budget_state.output_tokens_used,
+                    )
+                )
+            if self.pause_env is not None:
+                self.pause_env()
+            try:
+                assistant, metadata = self.engine.native_tool_completion(
+                    messages,
+                    tools=native_tools,
+                    tool_choice="auto",
+                    max_tokens=budget_before,
+                    additional_trace_tags={"actor_role": "worker"},
+                    interface_label="PLAIN_TEXT_WORKER_EPISODE",
+                )
+            finally:
+                if self.resume_env is not None:
+                    self.resume_env(self.generation_seconds)
+            budget_state.consume_output(metadata.get("completion_tokens"))
+            duration = metadata.get("completion_duration")
+            if isinstance(duration, (int, float)) and duration >= 0:
+                wall_seconds += float(duration)
+            calls = assistant.get("tool_calls")
+            if isinstance(calls, list) and calls:
+                if len(calls) != 1:
+                    raise ValidationError(
+                        "plain-text worker must emit at most one tool call per step"
+                    )
+                call = calls[0]
+                function = call["function"]
+                name = function["name"]
+                tool = tool_map.get(name)
+                if tool is None:
+                    raise ValidationError(
+                        f"plain-text worker called unknown tool: {name}"
+                    )
+                result = tool(**function["arguments"])
+                result_ref = (
+                    str(result.get("evidence_ref"))
+                    if isinstance(result, Mapping)
+                    and isinstance(result.get("evidence_ref"), str)
+                    else ""
+                )
+                tool_events.append(
+                    {
+                        "tool_name": name,
+                        "tool_call_id": str(call["id"]),
+                        "result_ref": result_ref,
+                    }
+                )
+                messages.append(dict(assistant))
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "name": name,
+                        "content": json.dumps(
+                            _safe_event_value(result),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    }
+                )
+                continue
+            content = assistant.get("content")
+            if isinstance(content, str) and content.strip():
+                return WorkerEpisode(
+                    objective=str(payload["objective"]),
+                    final_text=content.strip(),
+                    tool_events=tuple(tool_events),
+                    generated_tokens=budget_state.output_tokens_used,
+                    wall_seconds=wall_seconds,
+                )
+            raise ValidationError(
+                "plain-text worker returned neither a tool call nor final text"
+            )
+        raise BudgetExceededError(
+            BudgetExceededResult(
+                "max_steps",
+                budgets.max_steps,
+                budget_state.output_tokens_used,
+            )
+        )
+
+
 class DelegationWorkerAdapter:
     """Callable runtime boundary for one normalized delegation proposal."""
 
@@ -1044,7 +1211,7 @@ class DelegationWorkerAdapter:
                 TreatmentFailureReason.STATE_DIFF_VIOLATION,
                 "application state changed during the worker attempt",
             )
-        elif failure is None:
+        elif failure is None and not isinstance(value, WorkerEpisode):
             if isinstance(value, BudgetExceededResult) or (
                 isinstance(value, Mapping) and value.get("status") == "BUDGET_EXCEEDED"
             ):
@@ -1061,8 +1228,36 @@ class DelegationWorkerAdapter:
                     )
                 except (ValidationError, TypeError, ValueError) as exc:
                     failure = TreatmentFailure(TreatmentFailureReason.MALFORMED_ARTIFACT, str(exc))
-        result = WorkerResult(value if isinstance(value, EvidenceReport) and failure is None else None, failure, guard, payload).to_dict()
-        if result["artifact"] is not None:
+        if isinstance(value, WorkerEpisode) and failure is None:
+            result = {
+                "status": "WORKER_COMPLETED",
+                "episode": value.to_dict(),
+                "failure": None,
+                "state_guard": {
+                    "before_hash": guard.before_hash,
+                    "after_hash": guard.after_hash,
+                    "changed": guard.changed,
+                },
+                "payload": dict(payload),
+            }
+            self._emit(
+                EventName.WORKER_EPISODE,
+                actor_id=worker_id,
+                artifact_refs=tuple(
+                    event["result_ref"]
+                    for event in value.tool_events
+                    if event["result_ref"]
+                ),
+                payload={"episode": result["episode"]},
+            )
+        else:
+            result = WorkerResult(
+                value if isinstance(value, EvidenceReport) and failure is None else None,
+                failure,
+                guard,
+                payload,
+            ).to_dict()
+        if result.get("artifact") is not None:
             self._emit(
                 EventName.WORKER_ARTIFACT,
                 actor_id=worker_id,

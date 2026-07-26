@@ -9,7 +9,7 @@ from are.simulation.tool_utils import AppTool
 from causal_orch.agent.orchestrator import CausalOrchestrator
 from causal_orch.agent.worker import (
     DelegationWorkerAdapter,
-    NativeTypedWorkerRunner,
+    PlainTextWorkerRunner,
 )
 from causal_orch.models.manifests import MODEL_CANDIDATE_ORDER, ModelManifest, OpenRouterConfig
 from causal_orch.runner.agent_builder import CausalAgentBuilder
@@ -229,7 +229,7 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(dynamic["available_context_refs"], ("task",))
         self.assertEqual(dynamic["allowed_worker_tools"], ("FileSystem__read_file",))
 
-    def test_builder_selects_native_worker_only_for_native_capable_engine(self):
+    def test_builder_selects_plain_text_worker_for_native_capable_engine(self):
         experiment = make_experiment()
         env = FakeEnvironment()
         gate_calls = []
@@ -255,7 +255,7 @@ class BuilderTests(unittest.TestCase):
 
         callback = gate_calls[0]["worker_callback"]
         self.assertIsInstance(callback, DelegationWorkerAdapter)
-        self.assertIsInstance(callback.worker_runner, NativeTypedWorkerRunner)
+        self.assertIsInstance(callback.worker_runner, PlainTextWorkerRunner)
         self.assertIsNone(callback.worker_factory)
 
     def test_orchestrator_registers_task_and_refreshes_prompt_at_each_step(self):

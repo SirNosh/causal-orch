@@ -269,4 +269,9 @@ class DelegationInterventionGate:
             proposed_action="DELEGATE",
             executed_action="EXECUTE",
         )
-        return {"status": "DELEGATION_EXECUTED", "artifact": artifact}
+        response_key = (
+            "worker_episode"
+            if isinstance(artifact, Mapping) and "episode" in artifact
+            else "artifact"
+        )
+        return {"status": "DELEGATION_EXECUTED", response_key: artifact}
