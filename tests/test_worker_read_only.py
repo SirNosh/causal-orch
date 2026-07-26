@@ -439,6 +439,101 @@ class WorkerReadOnlyTests(unittest.TestCase):
             ],
         )
 
+    def test_plain_worker_preserves_required_are_list_arguments(self):
+        class ParameterizedReadTool:
+            public_name = "FileSystem__read_file"
+            app_name = "FileSystem"
+            function_name = "read_file"
+            write_operation = False
+            description = "Read one exact file."
+            argument_schema = [
+                {
+                    "name": "path",
+                    "type": "str",
+                    "description": "Exact path to read.",
+                    "has_default": False,
+                    "default": None,
+                },
+                {
+                    "name": "encoding",
+                    "type": "str",
+                    "description": "Text encoding.",
+                    "has_default": True,
+                    "default": "utf-8",
+                },
+            ]
+
+            def __call__(self, path, encoding="utf-8"):
+                self.call = {"path": path, "encoding": encoding}
+                return "parameter fidelity"
+
+        class NativeEngine:
+            def __init__(self, test_case):
+                self.test_case = test_case
+                self.calls = 0
+
+            def native_tool_completion(self, messages, *, tools, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    parameters = tools[0]["function"]["parameters"]
+                    self.test_case.assertEqual(
+                        parameters["required"], ["path"]
+                    )
+                    self.test_case.assertEqual(
+                        parameters["properties"]["path"]["type"], "string"
+                    )
+                    self.test_case.assertEqual(
+                        parameters["properties"]["encoding"]["default"],
+                        "utf-8",
+                    )
+                    return (
+                        {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "required-argument-call",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "FileSystem__read_file",
+                                        "arguments": {"path": "special.txt"},
+                                    },
+                                }
+                            ],
+                        },
+                        {"completion_tokens": 10},
+                    )
+                return (
+                    {
+                        "role": "assistant",
+                        "content": "The requested file contains parameter fidelity.",
+                        "tool_calls": [],
+                    },
+                    {"completion_tokens": 10},
+                )
+
+        tool = ParameterizedReadTool()
+        result = DelegationWorkerAdapter(
+            environment={"apps": {}},
+            available_tools=(tool,),
+            context_resolver={"task": "Read special.txt."},
+            worker_runner=PlainTextWorkerRunner(NativeEngine(self)),
+            trace_sink=InMemoryTraceSink(),
+        )(
+            {
+                "objective": "Read special.txt.",
+                "reason_code": "INFORMATION_GAP",
+                "context_refs": ["task"],
+                "allowed_read_tools": ["FileSystem__read_file"],
+                "completion_criterion": "Report its content.",
+            }
+        )
+
+        self.assertEqual(result["status"], "WORKER_COMPLETED")
+        self.assertEqual(
+            tool.call, {"path": "special.txt", "encoding": "utf-8"}
+        )
+
     def test_default_base_agent_worker_emits_events_invokes_read_tool_and_pauses_per_generation(self):
         calls = []
         pause_calls = []

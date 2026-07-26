@@ -11,10 +11,11 @@ models_file: models.yaml
 providers_file: providers.yaml
 randomization_file: randomization.yaml
 gaia2_manifest_file: gaia2_manifest.json
-local_model_manifest_file: local_model_manifest.json
+local_model_manifest_file: qwen_local_model_manifest.json
 
 manifests:
   gaia2_sha256: 354d5498bfbd22c380d6e79eec2ecaab7878b3c9bbcba5d3fee488baca5641fa
   model_sha256:
+    qwen3.6-35b-a3b: 2bc07ae1129cb906f7c67fd9a6ee14027d6289c234bb32fc61968c42e4eac98a
     Abiray/Nanbeige4.2-3B-GGUF:Q8_0: 9d91aade4605bf8ed286b086b1f14d6aad7c450f103945dea886dbad119a6e79
   provider_sha256: 8cd77edda03448e978c6771539c94964bb103b91465a9885dc47df76fd916942

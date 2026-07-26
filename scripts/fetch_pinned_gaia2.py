@@ -38,6 +38,96 @@ def raw_scenario(value: Any) -> str:
     return canonical_json(value)
 
 
+def materialize_screen(
+    manifest: dict[str, Any],
+    *,
+    verify_only: bool,
+) -> list[dict[str, str]]:
+    scenarios = manifest.get("scenarios")
+    if not isinstance(scenarios, list) or len(scenarios) != 5:
+        raise ValueError("breadth screen must pin exactly five scenarios")
+    pending: dict[str, dict[str, Any]] = {}
+    results = []
+    for entry in scenarios:
+        scenario_id = entry["scenario_id"]
+        output_path = Path(entry["scenario_file"])
+        expected_sha = entry["scenario_sha256"]
+        if output_path.exists():
+            actual_sha = sha256_bytes(output_path.read_bytes())
+            if actual_sha == expected_sha:
+                results.append(
+                    {
+                        "status": "verified",
+                        "scenario_id": scenario_id,
+                        "path": output_path.as_posix(),
+                        "sha256": actual_sha,
+                    }
+                )
+                continue
+            if verify_only:
+                raise ValueError(
+                    f"existing scenario hash mismatch: {scenario_id}"
+                )
+        elif verify_only:
+            raise FileNotFoundError(output_path)
+        pending[scenario_id] = entry
+    if not pending:
+        return results
+    try:
+        from datasets import load_dataset
+    except ImportError as exc:
+        raise RuntimeError("datasets is required to materialize Gaia2") from exc
+    capabilities = {entry["capability"] for entry in pending.values()}
+    for capability in capabilities:
+        dataset = load_dataset(
+            manifest["source_repo"],
+            name=capability,
+            split=manifest["split"],
+            revision=manifest["gaia2_revision"],
+            streaming=True,
+        )
+        for row in dataset:
+            scenario_id = str(row.get("scenario_id"))
+            entry = pending.get(scenario_id)
+            if entry is None or entry["capability"] != capability:
+                continue
+            if str(row.get("id")) != entry["row_id"]:
+                raise ValueError(f"row ID mismatch: {scenario_id}")
+            raw = raw_scenario(row["data"])
+            actual_sha = sha256_bytes(raw.encode("utf-8"))
+            if actual_sha != entry["scenario_sha256"]:
+                raise ValueError(f"scenario hash mismatch: {scenario_id}")
+            parsed_id = (
+                json.loads(raw)
+                .get("metadata", {})
+                .get("definition", {})
+                .get("scenario_id")
+            )
+            if parsed_id != scenario_id:
+                raise ValueError(f"scenario JSON ID mismatch: {scenario_id}")
+            output_path = Path(entry["scenario_file"])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(raw, encoding="utf-8")
+            results.append(
+                {
+                    "status": "materialized",
+                    "scenario_id": scenario_id,
+                    "path": output_path.as_posix(),
+                    "sha256": actual_sha,
+                }
+            )
+            del pending[scenario_id]
+            if not any(
+                item["capability"] == capability for item in pending.values()
+            ):
+                break
+    if pending:
+        raise LookupError(
+            f"scenarios not found: {','.join(sorted(pending))}"
+        )
+    return results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
@@ -48,6 +138,14 @@ def main() -> int:
     if not isinstance(manifest, dict):
         raise ValueError("Gaia2 manifest must contain a JSON object")
     verify_manifest_hash(manifest)
+    if "scenarios" in manifest:
+        print(
+            json.dumps(
+                materialize_screen(manifest, verify_only=args.verify_only),
+                sort_keys=True,
+            )
+        )
+        return 0
 
     scenario_ids = manifest.get("scenario_ids")
     row_ids = manifest.get("row_ids")

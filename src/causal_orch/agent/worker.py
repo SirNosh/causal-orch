@@ -189,6 +189,7 @@ def _native_tool_schema(tool: Any) -> dict[str, Any]:
         return native_return_artifact_tool_schema()
     inputs = _tool_inputs(tool)
     properties = {}
+    required = []
     for name, value in inputs.items():
         field_type = value.get("type")
         properties[name] = {
@@ -199,7 +200,14 @@ def _native_tool_schema(tool: Any) -> dict[str, Any]:
                 else {}
             ),
             "description": value.get("description", ""),
+            **(
+                {"default": value["default"]}
+                if value.get("has_default")
+                else {}
+            ),
         }
+        if value.get("required"):
+            required.append(name)
     return {
         "type": "function",
         "function": {
@@ -207,7 +215,7 @@ def _native_tool_schema(tool: Any) -> dict[str, Any]:
             "description": str(getattr(tool, "description", "")),
             "parameters": {
                 "type": "object",
-                "required": list(properties),
+                "required": required,
                 "additionalProperties": False,
                 "properties": properties,
             },
@@ -310,24 +318,83 @@ class _TracedExecutableTool(Tool):
 
 
 def _tool_inputs(tool: Any) -> dict[str, dict[str, Any]]:
+    def field(
+        value: Any,
+        *,
+        required: bool,
+        has_default: bool = False,
+        default: Any = None,
+    ) -> dict[str, Any]:
+        raw_type = (
+            value.get("type", value.get("arg_type", "any"))
+            if isinstance(value, Mapping)
+            else "any"
+        )
+        type_name = {
+            "str": "string",
+            "int": "integer",
+            "float": "number",
+            "bool": "boolean",
+            "list": "array",
+            "dict": "object",
+        }.get(str(raw_type), str(raw_type))
+        return {
+            "type": type_name,
+            "description": (
+                str(value.get("description", ""))
+                if isinstance(value, Mapping)
+                else ""
+            ),
+            "required": required,
+            "has_default": has_default,
+            **({"default": _json_safe(default)} if has_default else {}),
+        }
+
     inputs = getattr(tool, "inputs", None)
     if isinstance(inputs, Mapping):
         return {
-            str(name): {
-                "type": value.get("type", "any") if isinstance(value, Mapping) else "any",
-                "description": str(value.get("description", "")) if isinstance(value, Mapping) else "",
-            }
+            str(name): field(
+                value,
+                required=not (
+                    isinstance(value, Mapping) and "default" in value
+                ),
+                has_default=isinstance(value, Mapping) and "default" in value,
+                default=value.get("default") if isinstance(value, Mapping) else None,
+            )
             for name, value in inputs.items()
         }
     schema = getattr(tool, "argument_schema", None)
-    properties = schema.get("properties", {}) if isinstance(schema, Mapping) else {}
-    return {
-        str(name): {
-            "type": value.get("type", "any") if isinstance(value, Mapping) else "any",
-            "description": str(value.get("description", "")) if isinstance(value, Mapping) else "",
+    if isinstance(schema, Mapping):
+        properties = schema.get("properties", {})
+        required = set(schema.get("required", ()))
+        return {
+            str(name): field(
+                value,
+                required=name in required,
+                has_default=isinstance(value, Mapping) and "default" in value,
+                default=value.get("default") if isinstance(value, Mapping) else None,
+            )
+            for name, value in properties.items()
         }
-        for name, value in properties.items()
-    }
+    args = schema if isinstance(schema, list) else getattr(tool, "args", None)
+    if not isinstance(args, (list, tuple)):
+        return {}
+    result = {}
+    for arg in args:
+        name = get_arg(arg, "name", "arg_name")
+        if not isinstance(name, str) or not name:
+            continue
+        has_default = bool(get_arg(arg, "has_default"))
+        result[name] = field(
+            {
+                "type": get_arg(arg, "type", "arg_type"),
+                "description": get_arg(arg, "description") or "",
+            },
+            required=not has_default,
+            has_default=has_default,
+            default=get_arg(arg, "default"),
+        )
+    return result
 
 
 def _safe_event_value(value: Any) -> Any:

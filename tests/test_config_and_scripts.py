@@ -59,9 +59,18 @@ class ConfigAndScriptTests(unittest.TestCase):
         randomization = yaml.safe_load((ROOT / "configs/randomization.yaml").read_text())
         gaia = json.loads((ROOT / "configs/gaia2_manifest.json").read_text())
         local = json.loads((ROOT / "configs/local_model_manifest.json").read_text())
+        qwen = json.loads(
+            (ROOT / "configs/qwen_local_model_manifest.json").read_text()
+        )
+        screen = json.loads(
+            (ROOT / "configs/gaia2_breadth_screen.json").read_text()
+        )
         self.assertEqual(experiment["protocol"]["are_commit"], "7946367413129784139e785ae4c351090002a0bb")
         self.assertEqual(experiment["protocol"]["fixed_generation_seconds"], 5)
-        self.assertEqual(models["candidate_order"], [LOCAL_MODEL_SLUG])
+        self.assertEqual(
+            models["candidate_order"],
+            ["qwen3.6-35b-a3b", LOCAL_MODEL_SLUG],
+        )
         self.assertFalse(providers["allow_fallbacks"])
         self.assertEqual(randomization["assignment"]["ratio"], "50/50")
         self.assertTrue(randomization["seed"])
@@ -69,7 +78,7 @@ class ConfigAndScriptTests(unittest.TestCase):
         self.assertEqual(
             providers["routing_provider_slug"], "nanbeige-llama-cpp-local"
         )
-        self.assertEqual(models["selection"]["selected_model"], LOCAL_MODEL_SLUG)
+        self.assertIsNone(models["selection"]["selected_model"])
         self.assertEqual(gaia["gaia2_revision"], "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99")
         self.assertEqual(gaia["scenario_ids"], ["scenario_universe_28_2nr5po"])
         self.assertEqual(gaia["row_count"], 160)
@@ -89,13 +98,26 @@ class ConfigAndScriptTests(unittest.TestCase):
         self.assertEqual(experiment["protocol"]["gaia2_revision"], gaia["gaia2_revision"])
         self.assertEqual(experiment["protocol"]["scenario_ids"], gaia["scenario_ids"])
         model_manifest = LocalModelManifest.from_dict(local["model_manifest"])
+        qwen_manifest = LocalModelManifest.from_dict(qwen["model_manifest"])
+        candidates = {
+            candidate["model_slug"]: candidate
+            for candidate in models["candidates"]
+        }
         self.assertEqual(
-            models["candidates"][0]["manifest_sha256"],
+            candidates[LOCAL_MODEL_SLUG]["manifest_sha256"],
             model_manifest.manifest_sha256,
+        )
+        self.assertEqual(
+            candidates["qwen3.6-35b-a3b"]["manifest_sha256"],
+            qwen_manifest.manifest_sha256,
         )
         self.assertEqual(
             experiment["manifests"]["model_sha256"][LOCAL_MODEL_SLUG],
             model_manifest.manifest_sha256,
+        )
+        self.assertEqual(
+            experiment["manifests"]["model_sha256"]["qwen3.6-35b-a3b"],
+            qwen_manifest.manifest_sha256,
         )
         provider_hash = hashlib.sha256(
             json.dumps(
@@ -110,6 +132,41 @@ class ConfigAndScriptTests(unittest.TestCase):
         self.assertEqual(experiment["manifests"]["provider_sha256"], provider_hash)
         self.assertEqual(experiment["manifests"]["gaia2_sha256"], gaia["manifest_sha256"])
         self.assertEqual(model_manifest.quantization, "Q8_0")
+        self.assertEqual(
+            local["condition"]["qualification_status"],
+            "FAILED_CAPABILITY_FLOOR",
+        )
+        self.assertEqual(qwen_manifest.quantization, "UD-Q4_K_XL")
+        self.assertEqual(
+            qwen["condition"]["qualification_status"],
+            "FAILED_ACTION_VALIDITY_GATE",
+        )
+        self.assertEqual(qwen["runtime"]["gpu_layers"], 15)
+        self.assertEqual(qwen["runtime"]["threads"], 6)
+        self.assertEqual(
+            experiment["local_model_manifest_file"],
+            "qwen_local_model_manifest.json",
+        )
+        screen_payload = {
+            key: value for key, value in screen.items() if key != "manifest_sha256"
+        }
+        self.assertEqual(
+            screen["manifest_sha256"],
+            hashlib.sha256(
+                json.dumps(
+                    screen_payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ).encode()
+            ).hexdigest(),
+        )
+        self.assertEqual(len(screen["scenarios"]), 5)
+        self.assertEqual(screen["attempts_per_scenario"], 2)
+        self.assertEqual(
+            {row["capability"] for row in screen["scenarios"]},
+            {"search", "ambiguity", "adaptability", "execution"},
+        )
         self.assertEqual(model_manifest.context_length, 32768)
         self.assertEqual(
             model_manifest.llama_cpp_commit,

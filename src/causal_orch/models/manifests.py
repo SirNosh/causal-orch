@@ -187,10 +187,10 @@ class LocalLlamaConfig:
     data_collection: str = "deny"
 
     def __post_init__(self) -> None:
-        if self.model_slug != LOCAL_MODEL_SLUG:
-            raise ManifestError(f"local model is pinned to {LOCAL_MODEL_SLUG!r}")
-        if self.provider != LOCAL_PROVIDER:
-            raise ManifestError(f"local provider is pinned to {LOCAL_PROVIDER!r}")
+        if not isinstance(self.model_slug, str) or not self.model_slug:
+            raise ManifestError("local model slug is required")
+        if not isinstance(self.provider, str) or not self.provider:
+            raise ManifestError("local provider identity is required")
         if not self.model_path or not self.server_binary_path:
             raise ManifestError("local model and server binary paths are required")
         for label, value in (
@@ -334,7 +334,7 @@ class ModelManifest:
 
 @dataclass(frozen=True)
 class LocalModelManifest:
-    """Immutable identity for the exact Nanbeige GGUF and llama.cpp fork."""
+    """Immutable identity for one exact local GGUF and llama.cpp build."""
 
     snapshot_timestamp_utc: str
     requested_model_slug: str
@@ -363,14 +363,16 @@ class LocalModelManifest:
     manifest_sha256: str = ""
 
     def __post_init__(self) -> None:
-        if self.requested_model_slug != LOCAL_MODEL_SLUG:
-            raise ManifestError("unexpected local model slug")
-        if self.selected_provider != LOCAL_PROVIDER:
-            raise ManifestError("unexpected local provider")
-        if self.quantization != "Q8_0" or self.context_length != 32768:
-            raise ManifestError("local baseline is fixed to Q8_0 with 32K context")
-        if self.llama_cpp_branch != "nanbeige42":
-            raise ManifestError("llama.cpp branch must be nanbeige42")
+        for label, value in (
+            ("requested_model_slug", self.requested_model_slug),
+            ("selected_provider", self.selected_provider),
+            ("quantization", self.quantization),
+            ("llama_cpp_branch", self.llama_cpp_branch),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ManifestError(f"{label} is required")
+        if self.context_length != 32768:
+            raise ManifestError("local qualification context is fixed to 32K")
         for label, value in (
             ("gguf_sha256", self.gguf_sha256),
             ("server_binary_sha256", self.server_binary_sha256),

@@ -1,8 +1,21 @@
+param(
+    [string]$ManifestPath = ""
+)
+
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$manifest = Get-Content (Join-Path $repoRoot "configs\local_model_manifest.json") -Raw | ConvertFrom-Json
-$modelPath = Join-Path $repoRoot $manifest.runtime.model_path
+$manifestPath = if ($ManifestPath) {
+    $ManifestPath
+} else {
+    Join-Path $repoRoot "configs\local_model_manifest.json"
+}
+$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+$modelPath = if ([IO.Path]::IsPathRooted($manifest.runtime.model_path)) {
+    $manifest.runtime.model_path
+} else {
+    Join-Path $repoRoot $manifest.runtime.model_path
+}
 $serverPath = Join-Path $repoRoot $manifest.runtime.server_binary_path
 
 if ((Get-FileHash -Algorithm SHA256 $modelPath).Hash.ToLowerInvariant() -ne $manifest.model_manifest.gguf_sha256) {
@@ -12,16 +25,30 @@ if ((Get-FileHash -Algorithm SHA256 $serverPath).Hash.ToLowerInvariant() -ne $ma
     throw "llama-server hash does not match configs/local_model_manifest.json"
 }
 
-& $serverPath `
-    --model $modelPath `
-    --alias $manifest.model_manifest.requested_model_slug `
-    --host $manifest.runtime.host `
-    --port $manifest.runtime.port `
-    --ctx-size $manifest.runtime.context_length `
-    --parallel $manifest.runtime.parallel_slots `
-    --gpu-layers $manifest.runtime.gpu_layers `
-    --cache-type-k $manifest.runtime.kv_cache_type_k `
-    --cache-type-v $manifest.runtime.kv_cache_type_v `
-    --flash-attn on `
-    --reasoning-preserve `
-    --jinja
+$serverArgs = @(
+    "--model", $modelPath,
+    "--alias", $manifest.model_manifest.requested_model_slug,
+    "--host", $manifest.runtime.host,
+    "--port", $manifest.runtime.port,
+    "--ctx-size", $manifest.runtime.context_length,
+    "--parallel", $manifest.runtime.parallel_slots,
+    "--gpu-layers", $manifest.runtime.gpu_layers,
+    "--cache-type-k", $manifest.runtime.kv_cache_type_k,
+    "--cache-type-v", $manifest.runtime.kv_cache_type_v,
+    "--flash-attn", "on",
+    "--jinja"
+)
+if ($manifest.runtime.threads) {
+    $serverArgs += @("--threads", $manifest.runtime.threads)
+}
+if ($manifest.runtime.threads_batch) {
+    $serverArgs += @("--threads-batch", $manifest.runtime.threads_batch)
+}
+if ($manifest.runtime.reasoning) {
+    $serverArgs += @("--reasoning", "on")
+}
+if ($manifest.runtime.reasoning_preserve) {
+    $serverArgs += "--reasoning-preserve"
+}
+
+& $serverPath @serverArgs

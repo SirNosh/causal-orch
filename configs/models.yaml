@@ -1,4 +1,5 @@
 candidate_order:
+  - qwen3.6-35b-a3b
   - Abiray/Nanbeige4.2-3B-GGUF:Q8_0
 
 sampling:
@@ -8,13 +9,20 @@ sampling:
   max_tokens: 4096
 
 selection:
-  policy: pinned_local_qualification_candidate
+  policy: no_qualified_primary_candidate
   based_on_treatment_effect: false
-  selected_model: Abiray/Nanbeige4.2-3B-GGUF:Q8_0
+  selected_model: null
 
 candidates:
+  - model_slug: qwen3.6-35b-a3b
+    input_price: "0"
+    output_price: "0"
+    quantization: UD-Q4_K_XL
+    qualification_status: FAILED_ACTION_VALIDITY_GATE
+    manifest_sha256: 2bc07ae1129cb906f7c67fd9a6ee14027d6289c234bb32fc61968c42e4eac98a
   - model_slug: Abiray/Nanbeige4.2-3B-GGUF:Q8_0
     input_price: "0"
     output_price: "0"
     quantization: Q8_0
+    qualification_status: FAILED_CAPABILITY_FLOOR
     manifest_sha256: 9d91aade4605bf8ed286b086b1f14d6aad7c450f103945dea886dbad119a6e79
