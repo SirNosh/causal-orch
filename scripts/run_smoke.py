@@ -248,6 +248,13 @@ class Gaia2SmokeHarness:
             return result
         return result
 
+    def worker_only_delegation(self) -> Any:
+        """Run the configured worker directly, without an orchestrator trajectory."""
+
+        self._start()
+        gate = self.agent.react_agent.action_executor.intervention_gate
+        return gate.worker_callback(self.delegation_proposal)
+
     def orchestrator_continuation(self) -> Any:
         self._start()
         return self.agent.react_agent.execute_agent_loop()
@@ -715,6 +722,18 @@ def persist_smoke_artifacts(
         expected_model=experiment.model_config.model_slug,
         expected_provider=experiment.model_config.provider,
     )
+    react_agent = getattr(getattr(harness, "agent", None), "react_agent", None)
+    worker_interface = (
+        "NATIVE_TYPED_TOOL_INTERFACE"
+        if callable(
+            getattr(
+                getattr(react_agent, "llm_engine", None),
+                "native_tool_completion",
+                None,
+            )
+        )
+        else "STOCK_ARE_REACT_JSON"
+    )
 
     trace_lines = []
     for event in events:
@@ -762,6 +781,8 @@ def persist_smoke_artifacts(
         "error": execution.error,
         "model": experiment.model_config.model_slug,
         "provider": experiment.model_config.provider,
+        "orchestrator_interface": "STOCK_ARE_REACT_JSON",
+        "worker_interface": worker_interface,
         "scenario_id": scenario_id,
         "run_id": run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -827,7 +848,8 @@ def persist_smoke_artifacts(
         "context_length": getattr(experiment.model_config, "context_length", None),
         "sampling": experiment.model_config.sampling.to_dict(),
         "reasoning": _json_value(experiment.model_config.reasoning),
-        "agent_interface": "stock_are_react_json",
+        "orchestrator_interface": "STOCK_ARE_REACT_JSON",
+        "worker_interface": worker_interface,
         "max_orchestrator_iterations": experiment.max_iterations,
         "max_worker_steps": 8,
         "max_worker_output_tokens": 2000,
@@ -836,6 +858,16 @@ def persist_smoke_artifacts(
         json.dumps(request_policy, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    native_exchanges = getattr(
+        getattr(react_agent, "llm_engine", None),
+        "native_exchanges",
+        None,
+    )
+    if isinstance(native_exchanges, list) and native_exchanges:
+        (output_dir / "native-exchanges.json").write_text(
+            json.dumps(native_exchanges, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     return output_dir
 
 

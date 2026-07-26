@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 from enum import Enum
+import hashlib
 import json
 from typing import Any, Callable, Iterable, Mapping
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -26,12 +27,19 @@ from causal_orch.tracing.events import EventName, OrchestrationEvent
 
 from .action_executor import trace_model_output_rejection
 from .schemas import (
+    ArtifactStatus,
+    Confidence,
     DelegationProposal,
+    EvidenceFinding,
     EvidenceReport,
     ValidationError,
     diagnose_evidence_report,
 )
 from .schemas import MAX_WORKER_OUTPUT_TOKENS, MAX_WORKER_STEPS
+
+
+STOCK_ARE_REACT_JSON = "STOCK_ARE_REACT_JSON"
+NATIVE_TYPED_TOOL_INTERFACE = "NATIVE_TYPED_TOOL_INTERFACE"
 
 
 class TreatmentFailureReason(str, Enum):
@@ -115,6 +123,70 @@ class ReturnArtifactTool(Tool):
         if self._on_return is not None:
             self._on_return(validated)
         return validated.to_dict()
+
+
+def native_return_artifact_tool_schema() -> dict[str, Any]:
+    """Build and verify the native tool from the canonical EvidenceReport type."""
+
+    parameters = EvidenceReport.to_json_schema()
+    expected_fields = set(EvidenceReport.__dataclass_fields__)
+    finding = parameters["properties"]["findings"]["items"]
+    expected_finding_fields = set(EvidenceFinding.__dataclass_fields__)
+    if (
+        set(parameters["properties"]) != expected_fields
+        or set(parameters["required"]) != expected_fields
+        or parameters.get("additionalProperties") is not False
+        or set(finding["properties"]) != expected_finding_fields
+        or set(finding["required"]) != expected_finding_fields
+        or finding.get("additionalProperties") is not False
+        or parameters["properties"]["artifact_type"].get("type") != "string"
+        or parameters["properties"]["artifact_type"].get("enum")
+        != ["EVIDENCE_REPORT"]
+        or parameters["properties"]["status"].get("enum")
+        != [status.value for status in ArtifactStatus]
+        or finding["properties"]["confidence"].get("enum")
+        != [confidence.value for confidence in Confidence]
+    ):
+        raise RuntimeError("native artifact tool schema drifted from EvidenceReport")
+    return {
+        "type": "function",
+        "function": {
+            "name": "return_artifact",
+            "description": ReturnArtifactTool.description,
+            "parameters": parameters,
+        },
+    }
+
+
+def _native_tool_schema(tool: Any) -> dict[str, Any]:
+    if getattr(tool, "name", None) == "return_artifact":
+        return native_return_artifact_tool_schema()
+    inputs = _tool_inputs(tool)
+    properties = {}
+    for name, value in inputs.items():
+        field_type = value.get("type")
+        properties[name] = {
+            **(
+                {"type": field_type}
+                if field_type
+                in {"string", "integer", "number", "boolean", "array", "object"}
+                else {}
+            ),
+            "description": value.get("description", ""),
+        }
+    return {
+        "type": "function",
+        "function": {
+            "name": str(tool.name),
+            "description": str(getattr(tool, "description", "")),
+            "parameters": {
+                "type": "object",
+                "required": list(properties),
+                "additionalProperties": False,
+                "properties": properties,
+            },
+        },
+    }
 
 
 class _AuditableExecutableTool:
@@ -378,6 +450,30 @@ def worker_prompt(payload: Mapping[str, Any]) -> str:
     return f"{DEFAULT_ARE_SIMULATION_REACT_JSON_SYSTEM_PROMPT}\n\n<worker_instructions>\n{worker_instructions}\n</worker_instructions>"
 
 
+def native_worker_prompt(payload: Mapping[str, Any]) -> str:
+    schema_hash = hashlib.sha256(
+        canonical_json(native_return_artifact_tool_schema()).encode("utf-8")
+    ).hexdigest()
+    return "\n".join(
+        (
+            "You are a fresh, bounded read-only evidence worker.",
+            f"Objective: {payload['objective']}",
+            f"Completion criterion: {payload['completion_criterion']}",
+            f"Selected context: {json.dumps(payload['context'], sort_keys=True)}",
+            f"Permitted tools: {json.dumps(payload['permitted_tools'], sort_keys=True)}",
+            f"Initial evidence references: {json.dumps(payload['evidence_refs'])}",
+            "Read-tool observations may add a worker_tool_result:<event_id> evidence reference; use that exact handle for information learned from the tool.",
+            "Do not write, delete, update, send messages, contact the user, wait, control the environment, recurse, or delegate.",
+            "Use exactly one native function tool per step.",
+            "When finished, call return_artifact. Its arguments are the EvidenceReport fields directly.",
+            "Keep the report concise and limited to the delegated objective; do not answer or discuss the broader task.",
+            "Every string field must be a single line with no newline or other control characters.",
+            f"The report objective must equal this string exactly: {json.dumps(str(payload['objective']))}",
+            f"Canonical return_artifact schema SHA-256: {schema_hash}",
+        )
+    )
+
+
 class _TracedWorkerAgent(BaseAgent):
     def __init__(self, *args: Any, trace_sink: Any | None = None, **kwargs: Any) -> None:
         self.trace_sink = trace_sink
@@ -477,6 +573,278 @@ class BaseAgentWorkerFactory:
         agent.worker_artifact_holder = holder
         agent.worker_budget_state = budget_state
         return agent
+
+
+class NativeTypedWorkerRunner:
+    """Bounded native function-calling loop over already-audited worker tools."""
+
+    def __init__(
+        self,
+        engine: Any,
+        *,
+        trace_sink: Any | None = None,
+        pause_env: Callable[[], None] | None = None,
+        resume_env: Callable[[float], None] | None = None,
+        generation_seconds: float = 5.0,
+    ) -> None:
+        if not callable(getattr(engine, "native_tool_completion", None)):
+            raise TypeError("engine must provide native_tool_completion()")
+        self.engine = engine
+        self.trace_sink = trace_sink
+        self.pause_env = pause_env
+        self.resume_env = resume_env
+        self.generation_seconds = generation_seconds
+
+    def _emit_validation(
+        self,
+        payload: Mapping[str, Any],
+        accepted: bool,
+        rejections: tuple[str, ...],
+    ) -> None:
+        if self.trace_sink is None:
+            return
+        self.trace_sink.append(
+            OrchestrationEvent(
+                event_type=EventName.ARTIFACT_VALIDATION,
+                actor_id=str(payload.get("worker_id", "")) or None,
+                actor_role="worker",
+                error_type=(
+                    None
+                    if accepted
+                    else rejections[0] if rejections else "INVALID_SCHEMA"
+                ),
+                payload={
+                    "accepted": accepted,
+                    "primary_rejection": rejections[0] if rejections else None,
+                    "all_rejections": list(rejections),
+                },
+            )
+        )
+
+    def _exchange(self, metadata: Mapping[str, Any]) -> dict[str, Any] | None:
+        index = metadata.get("native_exchange_index")
+        exchanges = getattr(self.engine, "native_exchanges", None)
+        if (
+            type(index) is int
+            and isinstance(exchanges, list)
+            and 0 <= index < len(exchanges)
+        ):
+            return exchanges[index]
+        return None
+
+    def __call__(
+        self,
+        payload: Mapping[str, Any],
+        tools: tuple[Any, ...],
+    ) -> EvidenceReport:
+        budgets = WorkerBudgets.from_mapping(payload["budgets"])
+        budget_state = _WorkerBudgetState(budgets)
+        tool_map = {str(tool.name): tool for tool in tools}
+        native_tools = [_native_tool_schema(tool) for tool in tools]
+        native_tools.append(native_return_artifact_tool_schema())
+        prompt = native_worker_prompt(payload)
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": prompt},
+            {
+                "role": "user",
+                "content": "Complete the bounded objective using the available native function tools.",
+            },
+        ]
+        read_tool_used = False
+        force_artifact = False
+        for _step in range(budgets.max_steps):
+            budget_before = max(
+                0, budgets.max_output_tokens - budget_state.output_tokens_used
+            )
+            if budget_before < 1:
+                raise BudgetExceededError(
+                    BudgetExceededResult(
+                        "max_output_tokens",
+                        0,
+                        budget_state.output_tokens_used,
+                    )
+                )
+            if self.pause_env is not None:
+                self.pause_env()
+            try:
+                assistant, metadata = self.engine.native_tool_completion(
+                    messages,
+                    tools=native_tools,
+                    tool_choice=(
+                        {
+                            "type": "function",
+                            "function": {"name": "return_artifact"},
+                        }
+                        if force_artifact
+                        else "auto"
+                    ),
+                    max_tokens=budget_before,
+                    additional_trace_tags={"actor_role": "worker"},
+                )
+            finally:
+                if self.resume_env is not None:
+                    self.resume_env(self.generation_seconds)
+            exchange = self._exchange(metadata)
+            if exchange is not None:
+                exchange["phase"] = (
+                    "POST_TOOL_ARTIFACT" if read_tool_used or not tools else "PRE_TOOL"
+                )
+                exchange["budget_before"] = budget_before
+            try:
+                budget_state.consume_output(metadata.get("completion_tokens"))
+            finally:
+                if exchange is not None:
+                    exchange["budget_after"] = (
+                        0
+                        if budget_state.exceeded is not None
+                        else max(
+                            0,
+                            budgets.max_output_tokens
+                            - budget_state.output_tokens_used,
+                        )
+                    )
+                    exchange["budget_exhausted"] = (
+                        budget_state.exceeded is not None
+                    )
+            calls = assistant.get("tool_calls")
+            if not isinstance(calls, list) or len(calls) != 1:
+                if budget_state.output_tokens_used >= budgets.max_output_tokens:
+                    if exchange is not None:
+                        exchange["budget_exhausted"] = True
+                    raise BudgetExceededError(
+                        BudgetExceededResult(
+                            "max_output_tokens",
+                            0,
+                            budget_state.output_tokens_used,
+                        )
+                    )
+                if read_tool_used and not force_artifact:
+                    if exchange is not None:
+                        exchange["output_rejection"] = (
+                            "NATIVE_TOOL_CALL_MISSING"
+                        )
+                    if self.trace_sink is not None:
+                        self.trace_sink.append(
+                            OrchestrationEvent(
+                                event_type=EventName.MODEL_OUTPUT_REJECTED,
+                                actor_id=str(payload.get("worker_id", ""))
+                                or None,
+                                actor_role="worker",
+                                error_type="OUTPUT_FORMAT_REJECTED",
+                                payload={
+                                    "reason": "NATIVE_TOOL_CALL_MISSING"
+                                },
+                            )
+                        )
+                    messages.append(dict(assistant))
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Return the evidence through the required "
+                                "return_artifact function now. Do not answer "
+                                "in plain text."
+                            ),
+                        }
+                    )
+                    force_artifact = True
+                    continue
+                error = ValidationError(
+                    "native worker must emit exactly one tool call"
+                )
+                trace_model_output_rejection(
+                    self.trace_sink,
+                    error,
+                    actor_id=str(payload.get("worker_id", "")) or None,
+                    actor_role="worker",
+                )
+                raise error
+            call = calls[0]
+            function = call["function"]
+            name = function["name"]
+            arguments = function["arguments"]
+            messages.append(dict(assistant))
+            if name == "return_artifact":
+                categories = diagnose_evidence_report(
+                    arguments,
+                    objective=str(payload["objective"]),
+                    allowed_evidence_refs=set(payload["evidence_refs"]),
+                )
+                if exchange is not None:
+                    exchange["validator_input"] = arguments
+                try:
+                    artifact = FreshReadOnlyWorker._validate_artifact(
+                        arguments,
+                        str(payload["objective"]),
+                        allowed_evidence_refs=set(payload["evidence_refs"]),
+                    )
+                except (ValidationError, TypeError, ValueError):
+                    rejections = categories or ("INVALID_FIELD_TYPE",)
+                    self._emit_validation(payload, False, rejections)
+                    if exchange is not None:
+                        exchange["validator_result"] = {
+                            "accepted": False,
+                            "rejection_categories": list(rejections),
+                        }
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call["id"],
+                            "name": name,
+                            "content": json.dumps(
+                                {
+                                    "accepted": False,
+                                    "rejection_categories": list(rejections),
+                                },
+                                separators=(",", ":"),
+                            ),
+                        }
+                    )
+                    force_artifact = True
+                    continue
+                self._emit_validation(payload, True, ())
+                if exchange is not None:
+                    exchange["validator_result"] = {
+                        "accepted": True,
+                        "rejection_categories": [],
+                    }
+                return artifact
+            tool = tool_map.get(name)
+            if tool is None:
+                raise ValidationError(f"native worker called unknown tool: {name}")
+            result = tool(**arguments)
+            read_tool_used = True
+            force_artifact = False
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "name": name,
+                    "content": json.dumps(
+                        _safe_event_value(result),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                }
+            )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Continue using exactly one native function tool. "
+                        "If the completion criterion is satisfied, call "
+                        "return_artifact now; otherwise call a permitted read "
+                        "tool. Do not answer in plain text."
+                    ),
+                }
+            )
+        raise BudgetExceededError(
+            BudgetExceededResult(
+                "max_steps",
+                budgets.max_steps,
+                budget_state.output_tokens_used,
+            )
+        )
 
 
 class DelegationWorkerAdapter:

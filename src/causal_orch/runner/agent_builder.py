@@ -19,7 +19,7 @@ from causal_orch.models.local_llama_engine import LocalLlamaLLMEngine
 from causal_orch.models.manifests import LocalLlamaConfig
 from causal_orch.runtime.intervention import DelegationInterventionGate
 from causal_orch.runtime.read_only_tools import MANUALLY_AUDITED_ALLOWLIST, audit_tool
-from causal_orch.agent.worker import DelegationWorkerAdapter
+from causal_orch.agent.worker import DelegationWorkerAdapter, NativeTypedWorkerRunner
 
 from .config_builder import (
     CAUSAL_AGENT_NAME,
@@ -167,13 +167,28 @@ class CausalAgentBuilder(AbstractAgentBuilder):
                     registry = getattr(env, "context_registry", {})
                 return registry[ref]
 
+            worker_factory = self.worker_factory
+            worker_runner = self.worker_runner
+            worker_engine = llm_engine
+            if (
+                worker_factory is None
+                and worker_runner is None
+                and callable(getattr(llm_engine, "native_tool_completion", None))
+            ):
+                worker_runner = NativeTypedWorkerRunner(
+                    llm_engine,
+                    trace_sink=self.trace_sink,
+                    pause_env=env.pause,
+                    resume_env=env.resume_with_offset,
+                )
+                worker_engine = None
             worker_callback = DelegationWorkerAdapter(
                 environment=env,
                 available_tools=lambda: tuple(getattr(runtime.get("orchestrator"), "tools", {}).values()),
                 context_resolver=resolve_context,
-                worker_factory=self.worker_factory,
-                worker_runner=self.worker_runner,
-                llm_engine=llm_engine,
+                worker_factory=worker_factory,
+                worker_runner=worker_runner,
+                llm_engine=worker_engine,
                 trace_sink=self.trace_sink,
                 pause_env=env.pause,
                 resume_env=env.resume_with_offset,

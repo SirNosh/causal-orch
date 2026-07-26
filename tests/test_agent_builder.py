@@ -7,7 +7,10 @@ from are.simulation.agents.default_agent.tools.action_executor import ParsedActi
 from are.simulation.tool_utils import AppTool
 
 from causal_orch.agent.orchestrator import CausalOrchestrator
-from causal_orch.agent.worker import DelegationWorkerAdapter
+from causal_orch.agent.worker import (
+    DelegationWorkerAdapter,
+    NativeTypedWorkerRunner,
+)
 from causal_orch.models.manifests import MODEL_CANDIDATE_ORDER, ModelManifest, OpenRouterConfig
 from causal_orch.runner.agent_builder import CausalAgentBuilder
 from causal_orch.runner.config_builder import CausalAgentConfigBuilder, ExperimentConfig
@@ -225,6 +228,35 @@ class BuilderTests(unittest.TestCase):
         dynamic = gate_calls[0]["eligibility_context_provider"]()
         self.assertEqual(dynamic["available_context_refs"], ("task",))
         self.assertEqual(dynamic["allowed_worker_tools"], ("FileSystem__read_file",))
+
+    def test_builder_selects_native_worker_only_for_native_capable_engine(self):
+        experiment = make_experiment()
+        env = FakeEnvironment()
+        gate_calls = []
+
+        class NativeEngine:
+            def native_tool_completion(self, *_args, **_kwargs):
+                raise AssertionError("not called during construction")
+
+        def gate_factory(**kwargs):
+            gate_calls.append(kwargs)
+            return type(
+                "Gate",
+                (),
+                {"handle_proposal": lambda self, _proposal: {"status": "ok"}},
+            )()
+
+        builder = CausalAgentBuilder(
+            experiment,
+            engine_factory=lambda **_kwargs: NativeEngine(),
+            gate_factory=gate_factory,
+        )
+        builder.build(CausalAgentConfigBuilder(experiment).build(), env=env)
+
+        callback = gate_calls[0]["worker_callback"]
+        self.assertIsInstance(callback, DelegationWorkerAdapter)
+        self.assertIsInstance(callback.worker_runner, NativeTypedWorkerRunner)
+        self.assertIsNone(callback.worker_factory)
 
     def test_orchestrator_registers_task_and_refreshes_prompt_at_each_step(self):
         current = {"available_context_refs": (), "allowed_worker_tools": ()}

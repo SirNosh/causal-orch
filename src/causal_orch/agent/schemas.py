@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
-from typing import Any, Iterable, Mapping
+import types
+from typing import Any, Iterable, Literal, Mapping, Union, get_args, get_origin, get_type_hints
 from uuid import UUID
 
 
@@ -82,6 +83,50 @@ class ValidationError(ValueError):
     def __init__(self, message: str, reason: RejectionReason = RejectionReason.INVALID_SCHEMA):
         super().__init__(message)
         self.reason = reason
+
+
+def _json_schema(annotation: Any) -> dict[str, Any]:
+    origin = get_origin(annotation)
+    if origin is Literal:
+        values = list(get_args(annotation))
+        literal_type = "string" if all(isinstance(value, str) for value in values) else None
+        return {
+            **({"type": literal_type} if literal_type else {}),
+            "enum": values,
+        }
+    if origin in {Union, types.UnionType}:
+        variants = get_args(annotation)
+        non_null = tuple(value for value in variants if value is not type(None))
+        if len(non_null) == 1 and len(non_null) != len(variants):
+            schema = _json_schema(non_null[0])
+            schema_type = schema.get("type")
+            if isinstance(schema_type, str):
+                return {**schema, "type": [schema_type, "null"]}
+        return {"anyOf": [_json_schema(value) for value in variants]}
+    if origin in {list, tuple}:
+        arguments = get_args(annotation)
+        item_type = arguments[0] if arguments else Any
+        return {"type": "array", "items": _json_schema(item_type)}
+    if annotation is str:
+        return {"type": "string"}
+    if isinstance(annotation, type) and issubclass(annotation, Enum):
+        return {
+            "type": "string",
+            "enum": [member.value for member in annotation],
+        }
+    if isinstance(annotation, type) and is_dataclass(annotation):
+        hints = get_type_hints(annotation)
+        names = [field.name for field in fields(annotation)]
+        return {
+            "type": "object",
+            "required": names,
+            "additionalProperties": False,
+            "properties": {
+                name: _json_schema(hints[name])
+                for name in names
+            },
+        }
+    return {}
 
 
 def _text(value: Any, field: str, maximum: int, *, allow_empty: bool = False) -> str:
@@ -292,7 +337,7 @@ class EvidenceFinding:
 
 @dataclass(frozen=True)
 class EvidenceReport:
-    artifact_type: str
+    artifact_type: Literal["EVIDENCE_REPORT"]
     objective: str
     status: ArtifactStatus
     findings: tuple[EvidenceFinding, ...]
@@ -363,6 +408,12 @@ class EvidenceReport:
             "contradictions": list(self.contradictions),
             "recommended_next_action": self.recommended_next_action,
         }
+
+    @classmethod
+    def to_json_schema(cls) -> dict[str, Any]:
+        """Return the canonical structural contract used by native tool adapters."""
+
+        return _json_schema(cls)
 
 
 def diagnose_evidence_report(

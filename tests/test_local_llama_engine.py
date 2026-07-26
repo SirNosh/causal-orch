@@ -10,6 +10,7 @@ from causal_orch.models.local_llama_engine import (
 )
 from causal_orch.models.manifests import LocalLlamaConfig
 from causal_orch.models.openrouter_engine import BackoffPolicy, HTTPResponse
+from causal_orch.agent.worker import native_return_artifact_tool_schema
 from causal_orch.tracing.events import EventName
 from causal_orch.tracing.sink import InMemoryTraceSink
 
@@ -110,6 +111,61 @@ class LocalLlamaEngineTests(unittest.TestCase):
         ]
         self.assertEqual(len(terminals), 1)
         self.assertEqual(terminals[0].error_type, "MODEL_IDENTITY_MISMATCH")
+
+    def test_native_tool_request_normalizes_string_arguments_and_preserves_exchange(self):
+        tool = native_return_artifact_tool_schema()
+        arguments = {
+            "artifact_type": "EVIDENCE_REPORT",
+            "objective": "Identify the sender.",
+            "status": "COMPLETE",
+            "findings": [],
+            "uncertainties": [],
+            "contradictions": [],
+            "recommended_next_action": None,
+        }
+        transport = FakeTransport(
+            completion(
+                {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "return_artifact",
+                                "arguments": json.dumps(arguments),
+                            },
+                        }
+                    ],
+                }
+            )
+        )
+        sink = InMemoryTraceSink()
+        with tempfile.TemporaryDirectory() as directory:
+            engine = self.engine(directory, transport, sink)
+            message, metadata = engine.native_tool_completion(
+                [{"role": "user", "content": "Return the artifact."}],
+                tools=[tool],
+                max_tokens=123,
+            )
+
+        request = transport.requests[0].json_body
+        self.assertEqual(request["tools"], [tool])
+        self.assertEqual(request["tool_choice"], "auto")
+        self.assertEqual(request["max_tokens"], 123)
+        self.assertFalse(request["parallel_tool_calls"])
+        self.assertEqual(
+            message["tool_calls"][0]["function"]["arguments"], arguments
+        )
+        self.assertEqual(message["tool_calls"][0]["id"], "call-1")
+        exchange = engine.native_exchanges[metadata["native_exchange_index"]]
+        self.assertEqual(exchange["outgoing_request"], request)
+        self.assertEqual(exchange["normalized_tool_calls"], message["tool_calls"])
+        self.assertEqual(exchange["terminal_event"], "MODEL_RESPONSE")
+        self.assertEqual(
+            sink.events[0].payload["schema_strategy"],
+            "native_typed_tool_interface",
+        )
 
 
 if __name__ == "__main__":

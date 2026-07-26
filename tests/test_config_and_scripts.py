@@ -128,6 +128,8 @@ class ConfigAndScriptTests(unittest.TestCase):
             "probe_local_model",
             "fetch_pinned_gaia2",
             "diagnose_artifact_contract",
+            "diagnose_native_artifact_contract",
+            "diagnose_native_tool_artifact",
         ):
             with self.subTest(name=name):
                 _script(name)

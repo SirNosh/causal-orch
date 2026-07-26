@@ -8,8 +8,10 @@ from causal_orch.agent.worker import (
     BaseAgentWorkerFactory,
     DelegationWorkerAdapter,
     FreshReadOnlyWorker,
+    NativeTypedWorkerRunner,
     ReturnArtifactTool,
     TreatmentFailureReason,
+    native_return_artifact_tool_schema,
 )
 from causal_orch.runtime.budgets import (
     BudgetExceededError,
@@ -129,6 +131,130 @@ class WorkerReadOnlyTests(unittest.TestCase):
         )
         self.assertEqual(agent.action_executor.tools["return_artifact"].name, "return_artifact")
         self.assertEqual(agent.log_callback, worker_logs.append)
+
+    def test_native_artifact_schema_and_tool_result_replay_use_canonical_contract(self):
+        schema = native_return_artifact_tool_schema()["function"]["parameters"]
+        expected = {
+            "artifact_type",
+            "objective",
+            "status",
+            "findings",
+            "uncertainties",
+            "contradictions",
+            "recommended_next_action",
+        }
+        self.assertEqual(set(schema["properties"]), expected)
+        self.assertEqual(set(schema["required"]), expected)
+        self.assertFalse(schema["additionalProperties"])
+        finding = schema["properties"]["findings"]["items"]
+        self.assertEqual(
+            set(finding["required"]),
+            {"claim", "evidence_refs", "confidence"},
+        )
+        self.assertFalse(finding["additionalProperties"])
+        self.assertEqual(
+            schema["properties"]["artifact_type"]["enum"],
+            ["EVIDENCE_REPORT"],
+        )
+
+        class ReadTool:
+            name = "FileSystem__read_file"
+            description = "Read a record."
+            inputs = {"path": {"type": "string", "description": "Path"}}
+
+            def __call__(self, **arguments):
+                self.arguments = arguments
+                return {"value": "record-42", "evidence_ref": "task"}
+
+        class NativeEngine:
+            def __init__(self):
+                self.calls = []
+                self.native_exchanges = []
+
+            def native_tool_completion(self, messages, *, tools, **kwargs):
+                self.calls.append((messages, tools))
+                index = len(self.native_exchanges)
+                self.native_exchanges.append({})
+                if index == 0:
+                    call = {
+                        "id": "read-call",
+                        "type": "function",
+                        "function": {
+                            "name": "FileSystem__read_file",
+                            "arguments": {"path": "record"},
+                        },
+                    }
+                elif index == 1:
+                    self.test_case.assertEqual(messages[-2]["role"], "tool")
+                    self.test_case.assertEqual(
+                        messages[-2]["tool_call_id"], "read-call"
+                    )
+                    self.test_case.assertEqual(messages[-1]["role"], "user")
+                    return (
+                        {
+                            "role": "assistant",
+                            "content": "The record exists.",
+                            "tool_calls": [],
+                        },
+                        {
+                            "completion_tokens": 50,
+                            "native_exchange_index": index,
+                        },
+                    )
+                else:
+                    self.test_case.assertEqual(
+                        kwargs["tool_choice"]["function"]["name"],
+                        "return_artifact",
+                    )
+                    self.test_case.assertEqual(kwargs["max_tokens"], 1900)
+                    call = {
+                        "id": "artifact-call",
+                        "type": "function",
+                        "function": {
+                            "name": "return_artifact",
+                            "arguments": artifact(),
+                        },
+                    }
+                return (
+                    {"role": "assistant", "content": None, "tool_calls": [call]},
+                    {
+                        "completion_tokens": 50,
+                        "native_exchange_index": index,
+                    },
+                )
+
+        engine = NativeEngine()
+        engine.test_case = self
+        read_tool = ReadTool()
+        sink = InMemoryTraceSink()
+        runner = NativeTypedWorkerRunner(engine, trace_sink=sink)
+        result = runner(
+            {
+                "objective": "Find the record.",
+                "completion_criterion": "Name the record.",
+                "context": {"task": "Find the record."},
+                "permitted_tools": [],
+                "evidence_refs": ["task"],
+                "budgets": {"max_steps": 8, "max_output_tokens": 2000},
+                "worker_id": "worker-1",
+            },
+            (read_tool,),
+        )
+
+        self.assertIsInstance(result, EvidenceReport)
+        self.assertEqual(read_tool.arguments, {"path": "record"})
+        self.assertEqual(
+            [tool["function"]["name"] for tool in engine.calls[0][1]],
+            ["FileSystem__read_file", "return_artifact"],
+        )
+        self.assertEqual(
+            engine.native_exchanges[2]["validator_result"]["accepted"], True
+        )
+        self.assertEqual(
+            engine.native_exchanges[1]["output_rejection"],
+            "NATIVE_TOOL_CALL_MISSING",
+        )
+        self.assertEqual(sink.events[-1].event_type, EventName.ARTIFACT_VALIDATION)
 
     def test_default_base_agent_worker_emits_events_invokes_read_tool_and_pauses_per_generation(self):
         calls = []

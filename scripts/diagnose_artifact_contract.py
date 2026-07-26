@@ -313,6 +313,7 @@ def _request_audit(
     finding_fields = ("claim", "evidence_refs", "confidence")
     tools = body.get("tools")
     return {
+        "interface_label": "STOCK_ARE_REACT_JSON",
         "agent_interface": "stock_are_react_json",
         "openai_tools_field_present": isinstance(tools, list),
         "return_artifact_native_schema_present": bool(tools)
@@ -408,6 +409,7 @@ def run_diagnostic(
             "gguf_sha256": model_manifest.gguf_sha256,
             "llama_cpp_commit": model_manifest.llama_cpp_commit,
             "agent_interface": "stock_are_react_json",
+            "interface_label": "STOCK_ARE_REACT_JSON",
             "budget": budget,
             "thinking": thinking,
             "sampling": config.sampling.to_dict(),

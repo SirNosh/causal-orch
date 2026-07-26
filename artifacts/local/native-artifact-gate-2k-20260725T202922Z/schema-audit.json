@@ -1,0 +1,67 @@
+{
+  "additional_properties_false": true,
+  "artifact_type_enum": [
+    "EVIDENCE_REPORT"
+  ],
+  "chat_template_caps": {
+    "supports_object_arguments": true,
+    "supports_parallel_tool_calls": true,
+    "supports_preserve_reasoning": true,
+    "supports_string_content": true,
+    "supports_system_role": true,
+    "supports_tool_calls": true,
+    "supports_tools": true,
+    "supports_typed_content": false
+  },
+  "chat_template_present": true,
+  "chat_template_sha256": "fc4b80d5079d4834192d6afce193bab68f79ec4551d79361ee39dcc663f6935f",
+  "confidence_enum": [
+    "LOW",
+    "MEDIUM",
+    "HIGH"
+  ],
+  "finding_additional_properties_false": true,
+  "finding_fields": [
+    "claim",
+    "evidence_refs",
+    "confidence"
+  ],
+  "interface_label": "NATIVE_TYPED_TOOL_INTERFACE",
+  "model_alias": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+  "model_ftype": "Q8_0",
+  "openai_tools_field_present": true,
+  "parameters_equal_canonical_schema": true,
+  "required_finding_fields": [
+    "claim",
+    "evidence_refs",
+    "confidence"
+  ],
+  "required_top_level_fields": [
+    "artifact_type",
+    "objective",
+    "status",
+    "findings",
+    "uncertainties",
+    "contradictions",
+    "recommended_next_action"
+  ],
+  "return_artifact_native_schema_present": true,
+  "server_build_info": "b10042-d28da865b",
+  "status_enum": [
+    "COMPLETE",
+    "PARTIAL",
+    "BLOCKED"
+  ],
+  "tool_call_id_replay": "NOT_APPLICABLE_ARTIFACT_ONLY_SINGLE_TURN",
+  "tool_choice": "auto",
+  "tool_schema_sha256": "400cad090d99cf0335031cf2fb06e78e9a08b2415147794f14d7a9cfd9b68f6d",
+  "top_level_fields": [
+    "artifact_type",
+    "objective",
+    "status",
+    "findings",
+    "uncertainties",
+    "contradictions",
+    "recommended_next_action"
+  ]
+}
