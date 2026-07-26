@@ -39,7 +39,8 @@ from .schemas import MAX_WORKER_OUTPUT_TOKENS, MAX_WORKER_STEPS
 
 
 STOCK_ARE_REACT_JSON = "STOCK_ARE_REACT_JSON"
-NATIVE_TYPED_TOOL_INTERFACE = "NATIVE_TYPED_TOOL_INTERFACE"
+NATIVE_TYPED_TOOL_INTERFACE_AUTO = "NATIVE_TYPED_TOOL_INTERFACE_AUTO"
+NATIVE_TYPED_TOOL_INTERFACE_REQUIRED = "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED"
 
 
 class TreatmentFailureReason(str, Enum):
@@ -651,7 +652,6 @@ class NativeTypedWorkerRunner:
             },
         ]
         read_tool_used = False
-        force_artifact = False
         for _step in range(budgets.max_steps):
             budget_before = max(
                 0, budgets.max_output_tokens - budget_state.output_tokens_used
@@ -670,14 +670,7 @@ class NativeTypedWorkerRunner:
                 assistant, metadata = self.engine.native_tool_completion(
                     messages,
                     tools=native_tools,
-                    tool_choice=(
-                        {
-                            "type": "function",
-                            "function": {"name": "return_artifact"},
-                        }
-                        if force_artifact
-                        else "auto"
-                    ),
+                    tool_choice="required",
                     max_tokens=budget_before,
                     additional_trace_tags={"actor_role": "worker"},
                 )
@@ -718,45 +711,26 @@ class NativeTypedWorkerRunner:
                             budget_state.output_tokens_used,
                         )
                     )
-                if read_tool_used and not force_artifact:
-                    if exchange is not None:
-                        exchange["output_rejection"] = (
-                            "NATIVE_TOOL_CALL_MISSING"
+                violation = (
+                    "PROTOCOL_VIOLATION_NO_TOOL_CALL"
+                    if not isinstance(calls, list) or not calls
+                    else "PROTOCOL_VIOLATION_MULTIPLE_TOOL_CALLS"
+                )
+                if exchange is not None:
+                    exchange["output_rejection"] = violation
+                if self.trace_sink is not None:
+                    self.trace_sink.append(
+                        OrchestrationEvent(
+                            event_type=EventName.MODEL_OUTPUT_REJECTED,
+                            actor_id=str(payload.get("worker_id", ""))
+                            or None,
+                            actor_role="worker",
+                            error_type=violation,
+                            payload={"reason": violation},
                         )
-                    if self.trace_sink is not None:
-                        self.trace_sink.append(
-                            OrchestrationEvent(
-                                event_type=EventName.MODEL_OUTPUT_REJECTED,
-                                actor_id=str(payload.get("worker_id", ""))
-                                or None,
-                                actor_role="worker",
-                                error_type="OUTPUT_FORMAT_REJECTED",
-                                payload={
-                                    "reason": "NATIVE_TOOL_CALL_MISSING"
-                                },
-                            )
-                        )
-                    messages.append(dict(assistant))
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                "Return the evidence through the required "
-                                "return_artifact function now. Do not answer "
-                                "in plain text."
-                            ),
-                        }
                     )
-                    force_artifact = True
-                    continue
                 error = ValidationError(
                     "native worker must emit exactly one tool call"
-                )
-                trace_model_output_rejection(
-                    self.trace_sink,
-                    error,
-                    actor_id=str(payload.get("worker_id", "")) or None,
-                    actor_role="worker",
                 )
                 raise error
             call = calls[0]
@@ -786,22 +760,7 @@ class NativeTypedWorkerRunner:
                             "accepted": False,
                             "rejection_categories": list(rejections),
                         }
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": call["id"],
-                            "name": name,
-                            "content": json.dumps(
-                                {
-                                    "accepted": False,
-                                    "rejection_categories": list(rejections),
-                                },
-                                separators=(",", ":"),
-                            ),
-                        }
-                    )
-                    force_artifact = True
-                    continue
+                    raise
                 self._emit_validation(payload, True, ())
                 if exchange is not None:
                     exchange["validator_result"] = {
@@ -814,7 +773,6 @@ class NativeTypedWorkerRunner:
                 raise ValidationError(f"native worker called unknown tool: {name}")
             result = tool(**arguments)
             read_tool_used = True
-            force_artifact = False
             messages.append(
                 {
                     "role": "tool",
@@ -824,17 +782,6 @@ class NativeTypedWorkerRunner:
                         _safe_event_value(result),
                         sort_keys=True,
                         separators=(",", ":"),
-                    ),
-                }
-            )
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "Continue using exactly one native function tool. "
-                        "If the completion criterion is satisfied, call "
-                        "return_artifact now; otherwise call a permitted read "
-                        "tool. Do not answer in plain text."
                     ),
                 }
             )

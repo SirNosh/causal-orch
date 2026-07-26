@@ -13,7 +13,7 @@ import urllib.request
 from causal_orch.agent.schemas import EvidenceReport, diagnose_evidence_report
 from causal_orch.agent.worker import (
     FreshReadOnlyWorker,
-    NATIVE_TYPED_TOOL_INTERFACE,
+    NATIVE_TYPED_TOOL_INTERFACE_AUTO,
     native_return_artifact_tool_schema,
     native_worker_prompt,
 )
@@ -134,7 +134,7 @@ def _audit(
     canonical = EvidenceReport.to_json_schema()
     finding = parameters["properties"]["findings"]["items"]
     return {
-        "interface_label": NATIVE_TYPED_TOOL_INTERFACE,
+        "interface_label": NATIVE_TYPED_TOOL_INTERFACE_AUTO,
         "openai_tools_field_present": True,
         "return_artifact_native_schema_present": True,
         "parameters_equal_canonical_schema": parameters == canonical,
@@ -313,7 +313,7 @@ def run_gate(
     audit = _audit(tool, props)
     report = {
         "condition": {
-            "interface_label": NATIVE_TYPED_TOOL_INTERFACE,
+            "interface_label": NATIVE_TYPED_TOOL_INTERFACE_AUTO,
             "model": config.model_slug,
             "provider": config.provider,
             "gguf_sha256": manifest.gguf_sha256,

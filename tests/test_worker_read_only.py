@@ -3,7 +3,11 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from causal_orch.agent.schemas import EvidenceReport, diagnose_evidence_report
+from causal_orch.agent.schemas import (
+    EvidenceReport,
+    ValidationError,
+    diagnose_evidence_report,
+)
 from causal_orch.agent.worker import (
     BaseAgentWorkerFactory,
     DelegationWorkerAdapter,
@@ -172,7 +176,7 @@ class WorkerReadOnlyTests(unittest.TestCase):
                 self.native_exchanges = []
 
             def native_tool_completion(self, messages, *, tools, **kwargs):
-                self.calls.append((messages, tools))
+                self.calls.append((list(messages), tools, kwargs))
                 index = len(self.native_exchanges)
                 self.native_exchanges.append({})
                 if index == 0:
@@ -184,29 +188,13 @@ class WorkerReadOnlyTests(unittest.TestCase):
                             "arguments": {"path": "record"},
                         },
                     }
-                elif index == 1:
-                    self.test_case.assertEqual(messages[-2]["role"], "tool")
-                    self.test_case.assertEqual(
-                        messages[-2]["tool_call_id"], "read-call"
-                    )
-                    self.test_case.assertEqual(messages[-1]["role"], "user")
-                    return (
-                        {
-                            "role": "assistant",
-                            "content": "The record exists.",
-                            "tool_calls": [],
-                        },
-                        {
-                            "completion_tokens": 50,
-                            "native_exchange_index": index,
-                        },
-                    )
                 else:
+                    self.test_case.assertEqual(messages[-2]["role"], "assistant")
+                    self.test_case.assertEqual(messages[-1]["role"], "tool")
                     self.test_case.assertEqual(
-                        kwargs["tool_choice"]["function"]["name"],
-                        "return_artifact",
+                        messages[-1]["tool_call_id"], "read-call"
                     )
-                    self.test_case.assertEqual(kwargs["max_tokens"], 1900)
+                    self.test_case.assertEqual(kwargs["max_tokens"], 1950)
                     call = {
                         "id": "artifact-call",
                         "type": "function",
@@ -247,14 +235,61 @@ class WorkerReadOnlyTests(unittest.TestCase):
             [tool["function"]["name"] for tool in engine.calls[0][1]],
             ["FileSystem__read_file", "return_artifact"],
         )
-        self.assertEqual(
-            engine.native_exchanges[2]["validator_result"]["accepted"], True
+        self.assertTrue(
+            all(call[2]["tool_choice"] == "required" for call in engine.calls)
         )
         self.assertEqual(
-            engine.native_exchanges[1]["output_rejection"],
-            "NATIVE_TOOL_CALL_MISSING",
+            engine.native_exchanges[1]["validator_result"]["accepted"], True
         )
         self.assertEqual(sink.events[-1].event_type, EventName.ARTIFACT_VALIDATION)
+
+    def test_native_typed_worker_fails_plain_text_without_repair(self):
+        class NativeEngine:
+            def __init__(self):
+                self.calls = 0
+                self.native_exchanges = []
+
+            def native_tool_completion(self, messages, *, tools, **kwargs):
+                self.calls += 1
+                self.native_exchanges.append({})
+                return (
+                    {
+                        "role": "assistant",
+                        "content": "Plain text is not a worker action.",
+                        "tool_calls": [],
+                    },
+                    {
+                        "completion_tokens": 10,
+                        "native_exchange_index": 0,
+                    },
+                )
+
+        engine = NativeEngine()
+        sink = InMemoryTraceSink()
+        runner = NativeTypedWorkerRunner(engine, trace_sink=sink)
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "must emit exactly one tool call",
+        ):
+            runner(
+                {
+                    "objective": "Find the record.",
+                    "completion_criterion": "Name the record.",
+                    "context": {"task": "Find the record."},
+                    "permitted_tools": [],
+                    "evidence_refs": ["task"],
+                    "budgets": {"max_steps": 8, "max_output_tokens": 2000},
+                    "worker_id": "worker-1",
+                },
+                (),
+            )
+
+        self.assertEqual(engine.calls, 1)
+        self.assertEqual(
+            sink.events[-1].error_type,
+            "PROTOCOL_VIOLATION_NO_TOOL_CALL",
+        )
 
     def test_default_base_agent_worker_emits_events_invokes_read_tool_and_pauses_per_generation(self):
         calls = []

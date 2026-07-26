@@ -502,6 +502,11 @@ class LocalLlamaLLMEngine(LLMEngine):
         max_tokens: int | None = None,
         additional_trace_tags: Any = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        interface_label = (
+            "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED"
+            if tool_choice == "required"
+            else "NATIVE_TYPED_TOOL_INTERFACE_AUTO"
+        )
         correlation_id = self.correlation_id_factory()
         started = time.monotonic()
         trace_tags = _normalize_trace_tags(additional_trace_tags)
@@ -519,7 +524,7 @@ class LocalLlamaLLMEngine(LLMEngine):
             retry_count=0,
             payload={
                 "backend": "local_llama.cpp",
-                "schema_strategy": "native_typed_tool_interface",
+                "schema_strategy": interface_label,
                 "trace_tags": dict(trace_tags),
             },
         )
@@ -568,13 +573,13 @@ class LocalLlamaLLMEngine(LLMEngine):
                 metadata=metadata,
                 retry_count=retry_count,
                 response_kind="tool_call" if tool_calls else "text",
-                schema_strategy="native_typed_tool_interface",
+                schema_strategy=interface_label,
             )
             self._pending_request_ids.remove(correlation_id)
             exchange_index = len(self.native_exchanges)
             self.native_exchanges.append(
                 {
-                    "interface": "NATIVE_TYPED_TOOL_INTERFACE",
+                    "interface": interface_label,
                     "tool_schema": safe_tools,
                     "tool_schema_sha256": tool_schema_hash,
                     "outgoing_request": payload,

@@ -1,4 +1,4 @@
-"""Run five worker-only real-tool plus native-artifact Gaia2 probes."""
+"""Run worker-only required-tool plus native-artifact Gaia2 probes."""
 
 from __future__ import annotations
 
@@ -22,13 +22,65 @@ def _event_value(event: Any, name: str, default: Any = None) -> Any:
     return getattr(event, name, default)
 
 
+def _exchange_tool_calls(exchange: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    calls = exchange.get("normalized_tool_calls")
+    if not isinstance(calls, list):
+        return []
+    return [call for call in calls if isinstance(call, Mapping)]
+
+
+def _call_name(call: Mapping[str, Any]) -> str | None:
+    function = call.get("function")
+    if not isinstance(function, Mapping):
+        return None
+    name = function.get("name")
+    return name if isinstance(name, str) else None
+
+
+def _exact_tool_result_replay(exchanges: Sequence[Mapping[str, Any]]) -> bool:
+    environment_calls = []
+    for exchange_index, exchange in enumerate(exchanges):
+        for call in _exchange_tool_calls(exchange):
+            if _call_name(call) != "return_artifact":
+                environment_calls.append((exchange_index, call))
+    if not environment_calls:
+        return False
+    for exchange_index, call in environment_calls:
+        if exchange_index + 1 >= len(exchanges):
+            return False
+        call_id = call.get("id")
+        request = exchanges[exchange_index + 1].get("outgoing_request")
+        messages = request.get("messages") if isinstance(request, Mapping) else None
+        if not isinstance(call_id, str) or not isinstance(messages, list):
+            return False
+        assistant_replayed = any(
+            isinstance(message, Mapping)
+            and message.get("role") == "assistant"
+            and any(
+                isinstance(replayed_call, Mapping)
+                and replayed_call.get("id") == call_id
+                for replayed_call in (message.get("tool_calls") or [])
+            )
+            for message in messages
+        )
+        result_replayed = any(
+            isinstance(message, Mapping)
+            and message.get("role") == "tool"
+            and message.get("tool_call_id") == call_id
+            for message in messages
+        )
+        if not assistant_replayed or not result_replayed:
+            return False
+    return True
+
+
 def run_gate(
     *,
     output_dir: Path,
     attempts: int,
 ) -> dict[str, Any]:
-    if attempts != 5:
-        raise ValueError("the real-tool native-artifact gate requires five attempts")
+    if attempts not in {5, 20}:
+        raise ValueError("the required-tool gate supports 5 or 20 attempts")
     smoke_path = Path(__file__).with_name("run_smoke.py")
     spec = importlib.util.spec_from_file_location(
         "native_tool_artifact_run_smoke",
@@ -59,6 +111,9 @@ def run_gate(
             for event in events
             if _event_name(event) in {"MODEL_RESPONSE", "MODEL_CALL_FAILED"}
         ]
+        responses = [
+            event for event in terminals if _event_name(event) == "MODEL_RESPONSE"
+        ]
         terminal_ids = [
             _event_value(event, "openrouter_request_id") for event in terminals
         ]
@@ -77,10 +132,18 @@ def run_gate(
             and _event_value(event, "error_type") is None
             for event in events
         )
-        artifact_valid = any(
-            _event_name(event) == "ARTIFACT_VALIDATION"
-            and bool((_event_value(event, "payload", {}) or {}).get("accepted"))
+        artifact_validations = [
+            event
             for event in events
+            if _event_name(event) == "ARTIFACT_VALIDATION"
+        ]
+        artifact_valid = (
+            any(
+                bool((_event_value(event, "payload", {}) or {}).get("accepted"))
+                for event in artifact_validations
+            )
+            if artifact_validations
+            else None
         )
         failure = (
             result.get("failure")
@@ -92,16 +155,78 @@ def run_gate(
             bool(exchange.get("budget_exhausted")) for exchange in exchanges
         ) or failure.get("reason") == "TIMEOUT_OR_BUDGET_EXHAUSTION"
         state_violation = "STATE_CHANGED_DURING_WORKER" in names
-        model_verified = bool(terminals) and all(
-            _event_name(event) != "MODEL_RESPONSE"
-            or _event_value(event, "requested_model_slug")
-            == _event_value(event, "returned_model_slug")
-            for event in terminals
+        model_verified = (
+            all(
+                _event_value(event, "requested_model_slug")
+                == _event_value(event, "returned_model_slug")
+                for event in responses
+            )
+            if responses
+            else None
         )
-        provider_verified = bool(terminals) and all(
-            _event_name(event) != "MODEL_RESPONSE"
-            or _event_value(event, "provider_slug") == "Nanbeige/llama.cpp"
-            for event in terminals
+        provider_verified = (
+            all(
+                _event_value(event, "provider_slug") == "Nanbeige/llama.cpp"
+                for event in responses
+            )
+            if responses
+            else None
+        )
+        tool_names = [
+            name
+            for exchange in exchanges
+            for call in _exchange_tool_calls(exchange)
+            if (name := _call_name(call)) is not None
+        ]
+        environment_calls = [
+            name for name in tool_names if name != "return_artifact"
+        ]
+        environment_call_signatures = [
+            json.dumps(
+                call.get("function"),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            for exchange in exchanges
+            for call in _exchange_tool_calls(exchange)
+            if _call_name(call) != "return_artifact"
+        ]
+        repeated_environment_calls = len(environment_call_signatures) - len(
+            set(environment_call_signatures)
+        )
+        plain_text_responses = sum(
+            not _exchange_tool_calls(exchange) for exchange in exchanges
+        )
+        repair_attempts = sum(
+            exchange.get("phase") == "ARTIFACT_REPAIR"
+            for exchange in exchanges
+        )
+        exact_id_replay = (
+            _exact_tool_result_replay(exchanges) if environment_calls else None
+        )
+        required_every_request = bool(requests) and (
+            not exchanges
+            or all(
+                isinstance(exchange.get("outgoing_request"), Mapping)
+                and exchange["outgoing_request"].get("tool_choice") == "required"
+                for exchange in exchanges
+            )
+        )
+        artifact_completion_tokens = next(
+            (
+                exchange.get("completion_tokens")
+                for exchange in exchanges
+                if any(
+                    _call_name(call) == "return_artifact"
+                    for call in _exchange_tool_calls(exchange)
+                )
+            ),
+            None,
+        )
+        cumulative_generated_tokens = sum(
+            value
+            for exchange in exchanges
+            if type(value := exchange.get("completion_tokens")) is int
         )
         passed = all(
             (
@@ -113,6 +238,10 @@ def run_gate(
                 provider_verified,
                 not budget_exhausted,
                 not state_violation,
+                exact_id_replay,
+                required_every_request,
+                plain_text_responses == 0,
+                repair_attempts == 0,
             )
         )
         attempt_dir = output_dir / f"attempt-{attempt_number:02d}"
@@ -144,7 +273,22 @@ def run_gate(
             "model_identity_verified": model_verified,
             "provider_identity_verified": provider_verified,
             "state_write_violation": state_violation,
+            "tool_choice_required_every_request": required_every_request,
+            "exact_tool_call_id_replay": exact_id_replay,
+            "plain_text_worker_responses": plain_text_responses,
+            "repair_attempts": repair_attempts,
+            "first_selected_tool": tool_names[0] if tool_names else None,
+            "environment_tool_calls": len(environment_calls),
+            "selected_tools": tool_names,
+            "repeated_environment_tool_calls": repeated_environment_calls,
+            "artifact_completion_tokens": artifact_completion_tokens,
+            "cumulative_generated_tokens": cumulative_generated_tokens,
             "model_requests": len(requests),
+            "model_call_failure_types": [
+                _event_value(event, "error_type")
+                for event in terminals
+                if _event_name(event) == "MODEL_CALL_FAILED"
+            ],
             "native_exchanges": len(exchanges),
             "artifact": artifact,
         }
@@ -168,9 +312,12 @@ def run_gate(
         )
     report = {
         "condition": {
-            "interface_label": "NATIVE_TYPED_TOOL_INTERFACE",
+            "interface_label": "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED",
             "scenario_id": "scenario_universe_28_2nr5po",
             "orchestrator_present": False,
+            "tool_choice": "required",
+            "parallel_tool_calls": False,
+            "format_retry": False,
             "worker_budget": {
                 "max_steps": 8,
                 "max_output_tokens": 2000,

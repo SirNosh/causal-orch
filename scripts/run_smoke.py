@@ -724,7 +724,7 @@ def persist_smoke_artifacts(
     )
     react_agent = getattr(getattr(harness, "agent", None), "react_agent", None)
     worker_interface = (
-        "NATIVE_TYPED_TOOL_INTERFACE"
+        "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED"
         if callable(
             getattr(
                 getattr(react_agent, "llm_engine", None),

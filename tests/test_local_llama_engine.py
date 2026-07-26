@@ -164,7 +164,11 @@ class LocalLlamaEngineTests(unittest.TestCase):
         self.assertEqual(exchange["terminal_event"], "MODEL_RESPONSE")
         self.assertEqual(
             sink.events[0].payload["schema_strategy"],
-            "native_typed_tool_interface",
+            "NATIVE_TYPED_TOOL_INTERFACE_AUTO",
+        )
+        self.assertEqual(
+            exchange["interface"],
+            "NATIVE_TYPED_TOOL_INTERFACE_AUTO",
         )
 
 
