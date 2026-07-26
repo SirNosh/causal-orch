@@ -1,0 +1,47 @@
+{
+  "additional_properties_false_present": false,
+  "agent_interface": "stock_are_react_json",
+  "chat_template_caps": {
+    "supports_object_arguments": true,
+    "supports_parallel_tool_calls": true,
+    "supports_preserve_reasoning": true,
+    "supports_string_content": true,
+    "supports_system_role": true,
+    "supports_tool_calls": true,
+    "supports_tools": true,
+    "supports_typed_content": false
+  },
+  "chat_template_present": true,
+  "chat_template_sha256": "fc4b80d5079d4834192d6afce193bab68f79ec4551d79361ee39dcc663f6935f",
+  "enum_values_visible": {
+    "BLOCKED": true,
+    "COMPLETE": true,
+    "EVIDENCE_REPORT": true,
+    "HIGH": true,
+    "LOW": true,
+    "MEDIUM": true,
+    "PARTIAL": true
+  },
+  "finding_fields_visible": {
+    "claim": true,
+    "confidence": true,
+    "evidence_refs": true
+  },
+  "model_alias": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+  "model_ftype": "Q8_0",
+  "openai_tools_field_present": false,
+  "request_sha256": "906bd322dd6952fb0b22cb2df2a14c37564018bdbc67e1a0973bd2a99f751b28",
+  "required_arrays_present": false,
+  "return_artifact_native_schema_present": false,
+  "server_build_info": "b10042-d28da865b",
+  "tool_call_id_replay": "NOT_APPLICABLE_STOCK_ARE_TEXT_INTERFACE",
+  "top_level_fields_visible": {
+    "artifact_type": true,
+    "contradictions": true,
+    "findings": true,
+    "objective": true,
+    "recommended_next_action": true,
+    "status": true,
+    "uncertainties": true
+  }
+}

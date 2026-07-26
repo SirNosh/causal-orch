@@ -25,7 +25,12 @@ from causal_orch.runtime.state_guard import StateGuard, canonical_json
 from causal_orch.tracing.events import EventName, OrchestrationEvent
 
 from .action_executor import trace_model_output_rejection
-from .schemas import DelegationProposal, EvidenceReport, ValidationError
+from .schemas import (
+    DelegationProposal,
+    EvidenceReport,
+    ValidationError,
+    diagnose_evidence_report,
+)
 from .schemas import MAX_WORKER_OUTPUT_TOKENS, MAX_WORKER_STEPS
 
 
@@ -84,17 +89,29 @@ class ReturnArtifactTool(Tool):
     inputs = {"artifact": {"type": "any", "description": "EvidenceReport JSON object"}}
     output_type = "any"
 
-    def __init__(self, on_return: Callable[[EvidenceReport], None] | None = None) -> None:
+    def __init__(
+        self,
+        on_return: Callable[[EvidenceReport], None] | None = None,
+        on_validation: Callable[[bool, tuple[str, ...]], None] | None = None,
+    ) -> None:
         super().__init__()
         self._on_return = on_return
+        self._on_validation = on_validation
 
     def forward(self, artifact: Any) -> dict[str, Any]:
-        if isinstance(artifact, EvidenceReport):
-            validated = artifact
-        elif isinstance(artifact, Mapping):
-            validated = EvidenceReport.from_dict(artifact)
-        else:
-            raise ValidationError("artifact must be an EvidenceReport mapping")
+        try:
+            if isinstance(artifact, EvidenceReport):
+                validated = artifact
+            elif isinstance(artifact, Mapping):
+                validated = EvidenceReport.from_dict(artifact)
+            else:
+                raise ValidationError("artifact must be an EvidenceReport mapping")
+        except (TypeError, ValueError):
+            if self._on_validation is not None:
+                self._on_validation(False, diagnose_evidence_report(artifact))
+            raise
+        if self._on_validation is not None:
+            self._on_validation(True, ())
         if self._on_return is not None:
             self._on_return(validated)
         return validated.to_dict()
@@ -406,7 +423,26 @@ class BaseAgentWorkerFactory:
         def capture(artifact: EvidenceReport) -> None:
             holder["artifact"] = artifact
 
-        return_tool = ReturnArtifactTool(on_return=capture)
+        def record_validation(accepted: bool, rejections: tuple[str, ...]) -> None:
+            if self.trace_sink is not None:
+                self.trace_sink.append(
+                    OrchestrationEvent(
+                        event_type=EventName.ARTIFACT_VALIDATION,
+                        actor_id=str(payload.get("worker_id", "")) or None,
+                        actor_role="worker",
+                        error_type=None if accepted else rejections[0] if rejections else "INVALID_SCHEMA",
+                        payload={
+                            "accepted": accepted,
+                            "primary_rejection": rejections[0] if rejections else None,
+                            "all_rejections": list(rejections),
+                        },
+                    )
+                )
+
+        return_tool = ReturnArtifactTool(
+            on_return=capture,
+            on_validation=record_validation,
+        )
         tool_map = {str(getattr(tool, "name", "")): tool for tool in tools}
         tool_map[return_tool.name] = return_tool
         executor = JsonActionExecutor(tools=tool_map)

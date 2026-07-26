@@ -3,7 +3,7 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from causal_orch.agent.schemas import EvidenceReport
+from causal_orch.agent.schemas import EvidenceReport, diagnose_evidence_report
 from causal_orch.agent.worker import (
     BaseAgentWorkerFactory,
     DelegationWorkerAdapter,
@@ -194,12 +194,50 @@ class WorkerReadOnlyTests(unittest.TestCase):
                 EventName.WORKER_STARTED,
                 EventName.WORKER_TOOL_CALL,
                 EventName.WORKER_TOOL_RESULT,
+                EventName.ARTIFACT_VALIDATION,
                 EventName.WORKER_STATE_GUARD,
                 EventName.WORKER_ARTIFACT,
                 EventName.WORKER_COMPLETED,
             ],
         )
         self.assertTrue(all(event.previous_event_id for event in sink.events[1:]))
+
+    def test_artifact_rejection_diagnostics_do_not_change_validation(self):
+        value = {
+            "artifact_type": "EvidenceReport",
+            "objective": "wrong",
+            "status": "completed",
+            "findings": [
+                {
+                    "claim": "Found it.",
+                    "confidence": 1.0,
+                    "summary": "extra",
+                }
+            ],
+            "uncertainties": [],
+            "contradictions": [],
+            "extra": True,
+        }
+        categories = set(
+            diagnose_evidence_report(
+                value,
+                objective="Find the record.",
+                allowed_evidence_refs={"task"},
+            )
+        )
+        self.assertTrue(
+            {
+                "MISSING_REQUIRED_FIELD",
+                "UNKNOWN_FIELD",
+                "INVALID_ENUM_VALUE",
+                "INVALID_FINDING_STRUCTURE",
+                "INVALID_CONFIDENCE",
+                "INVALID_EVIDENCE_REFERENCE",
+                "OBJECTIVE_MISMATCH",
+            }.issubset(categories)
+        )
+        with self.assertRaises(ValueError):
+            EvidenceReport.from_dict(value)
 
     def test_default_base_agent_worker_budget_exhaustion_is_not_malformed(self):
         proposal = {

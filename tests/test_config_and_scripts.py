@@ -127,6 +127,7 @@ class ConfigAndScriptTests(unittest.TestCase):
             "run_are_gui",
             "probe_local_model",
             "fetch_pinned_gaia2",
+            "diagnose_artifact_contract",
         ):
             with self.subTest(name=name):
                 _script(name)

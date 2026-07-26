@@ -1,0 +1,1219 @@
+{
+  "attempts": 20,
+  "budget_exhaustions": 2,
+  "condition": {
+    "agent_interface": "stock_are_react_json",
+    "budget": 4000,
+    "gaia2_loaded": false,
+    "gguf_sha256": "76627e550979d8ea5746cb11922ad10352d91546aa540c0e8292522f8dd9c2b5",
+    "llama_cpp_commit": "d28da865bf284acaecc98ad18a3c1f607c0fd754",
+    "model": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+    "sampling": {
+      "max_tokens": 4096,
+      "temperature": 1.0,
+      "top_k": 20,
+      "top_p": 0.95
+    },
+    "synthetic_observation_sha256": "0c6cf5bede989156bc6e3f550f0829a73720185421a956b5f712873535c6ee15",
+    "thinking": true,
+    "validator": "EvidenceReport.from_dict + worker semantic validation"
+  },
+  "created_at": "2026-07-25T23:46:00.670430+00:00",
+  "malformed_argument_objects": 1,
+  "missing_fields": 20,
+  "model_manifest_sha256": "9d91aade4605bf8ed286b086b1f14d6aad7c450f103945dea886dbad119a6e79",
+  "provider_manifest_sha256": "8cd77edda03448e978c6771539c94964bb103b91465a9885dc47df76fd916942",
+  "qualified": false,
+  "request_audit": {
+    "additional_properties_false_present": false,
+    "agent_interface": "stock_are_react_json",
+    "chat_template_caps": {
+      "supports_object_arguments": true,
+      "supports_parallel_tool_calls": true,
+      "supports_preserve_reasoning": true,
+      "supports_string_content": true,
+      "supports_system_role": true,
+      "supports_tool_calls": true,
+      "supports_tools": true,
+      "supports_typed_content": false
+    },
+    "chat_template_present": true,
+    "chat_template_sha256": "fc4b80d5079d4834192d6afce193bab68f79ec4551d79361ee39dcc663f6935f",
+    "enum_values_visible": {
+      "BLOCKED": true,
+      "COMPLETE": true,
+      "EVIDENCE_REPORT": true,
+      "HIGH": true,
+      "LOW": true,
+      "MEDIUM": true,
+      "PARTIAL": true
+    },
+    "finding_fields_visible": {
+      "claim": true,
+      "confidence": true,
+      "evidence_refs": true
+    },
+    "model_alias": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+    "model_ftype": "Q8_0",
+    "openai_tools_field_present": false,
+    "request_sha256": "906bd322dd6952fb0b22cb2df2a14c37564018bdbc67e1a0973bd2a99f751b28",
+    "required_arrays_present": false,
+    "return_artifact_native_schema_present": false,
+    "server_build_info": "b10042-d28da865b",
+    "tool_call_id_replay": "NOT_APPLICABLE_STOCK_ARE_TEXT_INTERFACE",
+    "top_level_fields_visible": {
+      "artifact_type": true,
+      "contradictions": true,
+      "findings": true,
+      "objective": true,
+      "recommended_next_action": true,
+      "status": true,
+      "uncertainties": true
+    }
+  },
+  "results": [
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 1,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1036,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3500,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 500,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2964,
+          "budget_before": 3500,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 536,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 2,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1310,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3467,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 533,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2690,
+          "budget_before": 3467,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 777,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 3,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 3443,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3418,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 582,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2203,
+          "budget_before": 3418,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1215,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 557,
+          "budget_before": 2203,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1646,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 4,
+      "budget_exhausted": true,
+      "cumulative_generated_tokens": 5908,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3417,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 583,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 1583,
+          "budget_before": 3417,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1834,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "UNKNOWN_FIELD"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 183,
+          "budget_before": 1583,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1400,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "UNKNOWN_FIELD"
+          ]
+        },
+        {
+          "action_name": null,
+          "budget_after": 0,
+          "budget_before": 183,
+          "budget_overrun_tokens": 1908,
+          "completion_tokens": 2091,
+          "parsed_as_action": false,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": false,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": false
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 5,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1576,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3338,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 662,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2424,
+          "budget_before": 3338,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 914,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 6,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 2227,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3334,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 666,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 1773,
+          "budget_before": 3334,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1561,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "OBJECTIVE_MISMATCH",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 7,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 3824,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3624,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 376,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 1238,
+          "budget_before": 3624,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 2386,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE",
+            "OBJECTIVE_MISMATCH"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 176,
+          "budget_before": 1238,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1062,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 8,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 2206,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3031,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 969,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 1794,
+          "budget_before": 3031,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1237,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 9,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1725,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3330,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 670,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2275,
+          "budget_before": 3330,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1055,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 10,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1568,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3413,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 587,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2432,
+          "budget_before": 3413,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 981,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "OBJECTIVE_MISMATCH",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 11,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 3823,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3322,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 678,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2062,
+          "budget_before": 3322,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1260,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE",
+            "OBJECTIVE_MISMATCH"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 177,
+          "budget_before": 2062,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1885,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 12,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 2559,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3423,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 577,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2586,
+          "budget_before": 3423,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 837,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "UNKNOWN_FIELD"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 1441,
+          "budget_before": 2586,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1145,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 13,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1867,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3407,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 593,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2133,
+          "budget_before": 3407,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1274,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 14,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1747,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3182,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 818,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2253,
+          "budget_before": 3182,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 929,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 15,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 3660,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3449,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 551,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 1138,
+          "budget_before": 3449,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 2311,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 340,
+          "budget_before": 1138,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 798,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 16,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 2640,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3428,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 572,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2350,
+          "budget_before": 3428,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1078,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "UNKNOWN_FIELD"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 1360,
+          "budget_before": 2350,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 990,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 17,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1606,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3258,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 742,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2394,
+          "budget_before": 3258,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 864,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 18,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1208,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3422,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 578,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2792,
+          "budget_before": 3422,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 630,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 19,
+      "budget_exhausted": false,
+      "cumulative_generated_tokens": 1800,
+      "error": null,
+      "malformed_argument_object": false,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3500,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 500,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2200,
+          "budget_before": 3500,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1300,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": true,
+          "validator_reached": true,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": true
+    },
+    {
+      "all_rejections": [
+        "INVALID_ENUM_VALUE",
+        "MALFORMED_ARGUMENT_JSON",
+        "MISSING_REQUIRED_FIELD",
+        "OBJECTIVE_MISMATCH",
+        "UNKNOWN_FIELD"
+      ],
+      "attempt_number": 20,
+      "budget_exhausted": true,
+      "cumulative_generated_tokens": 4183,
+      "error": null,
+      "malformed_argument_object": true,
+      "missing_field": true,
+      "requests": [
+        {
+          "action_name": "return_artifact",
+          "budget_after": 3468,
+          "budget_before": 4000,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 532,
+          "parsed_as_action": true,
+          "phase": "POST_TOOL_ARTIFACT",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 2451,
+          "budget_before": 3468,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 1017,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 1752,
+          "budget_before": 2451,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 699,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE"
+          ]
+        },
+        {
+          "action_name": "return_artifact",
+          "budget_after": 1479,
+          "budget_before": 1752,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 273,
+          "parsed_as_action": true,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": true,
+          "validator_rejection_categories": [
+            "MISSING_REQUIRED_FIELD",
+            "UNKNOWN_FIELD",
+            "INVALID_ENUM_VALUE",
+            "OBJECTIVE_MISMATCH"
+          ]
+        },
+        {
+          "action_name": null,
+          "budget_after": 1085,
+          "budget_before": 1479,
+          "budget_overrun_tokens": 0,
+          "completion_tokens": 394,
+          "parsed_as_action": false,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": false,
+          "validator_rejection_categories": [
+            "MALFORMED_ARGUMENT_JSON"
+          ]
+        },
+        {
+          "action_name": null,
+          "budget_after": 0,
+          "budget_before": 1085,
+          "budget_overrun_tokens": 183,
+          "completion_tokens": 1268,
+          "parsed_as_action": false,
+          "phase": "ARTIFACT_REPAIR",
+          "reasoning_tokens": null,
+          "validator_accepted": false,
+          "validator_reached": false,
+          "validator_rejection_categories": []
+        }
+      ],
+      "unknown_field": true,
+      "validator_accepted": false
+    }
+  ],
+  "unknown_fields": 20,
+  "valid_exact_artifacts": 18
+}

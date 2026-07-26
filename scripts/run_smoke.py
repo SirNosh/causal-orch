@@ -709,6 +709,12 @@ def persist_smoke_artifacts(
     experiment = harness.agent_builder.experiment_config
     output_dir = Path(artifact_root) / str(run_id)
     output_dir.mkdir(parents=True, exist_ok=False)
+    layered = qualification_attempt_metrics(
+        execution,
+        events,
+        expected_model=experiment.model_config.model_slug,
+        expected_provider=experiment.model_config.provider,
+    )
 
     trace_lines = []
     for event in events:
@@ -730,9 +736,28 @@ def persist_smoke_artifacts(
         "direct_action_result_sha256": _sha256_json(
             execution.direct_action_result
         ),
+        "end_to_end_contract_pass": execution.infrastructure_pass,
+        "legacy_infrastructure_pass": execution.infrastructure_pass,
         "infrastructure_pass": execution.infrastructure_pass,
+        **{
+            key: layered[key]
+            for key in (
+                "runtime_available",
+                "environment_initialized",
+                "model_identity_verified",
+                "provider_identity_verified",
+                "model_call_completed",
+                "terminal_trace_complete",
+                "worker_tool_executed",
+                "artifact_validator_reached",
+                "artifact_schema_valid",
+                "delegation_completed",
+                "orchestrator_resumed",
+                "gaia2_evaluated",
+            )
+        },
         "native_validation_completed": execution.native_validation_completed,
-        "gaia2_success": execution.gaia2_success,
+        "gaia2_success": layered["gaia2_success"],
         "failure_stage": execution.failure_stage,
         "error": execution.error,
         "model": experiment.model_config.model_slug,
@@ -956,12 +981,49 @@ def qualification_attempt_metrics(
         _event_value(event, "provider_slug") == expected_provider
         for event in responses
     )
+    runtime_failures = {
+        "HTTP_OUTAGE",
+        "TRANSPORT_ERROR",
+        "PROVIDER_IDENTITY_UNVERIFIABLE",
+    }
+    runtime_available = bool(requests) and not any(
+        _event_value(event, "error_type") in runtime_failures
+        for event in failures
+    )
+    model_call_completed = bool(requests) and not failures and len(responses) == len(
+        requests
+    )
     worker_tool_success = any(
         _event_name(event) == "WORKER_TOOL_RESULT"
         and _event_value(event, "error_type") is None
         for event in events
     )
     worker_artifact_valid = "WORKER_ARTIFACT" in names
+    worker_started = "WORKER_STARTED" in names
+    artifact_validations = [
+        event for event in events if _event_name(event) == "ARTIFACT_VALIDATION"
+    ]
+    artifact_validator_reached: bool | None = (
+        bool(artifact_validations) if worker_started else None
+    )
+    artifact_schema_valid: bool | None = (
+        any(
+            bool((_event_value(event, "payload", {}) or {}).get("accepted"))
+            for event in artifact_validations
+        )
+        if artifact_validations
+        else None
+    )
+    worker_completed_events = [
+        event for event in events if _event_name(event) == "WORKER_COMPLETED"
+    ]
+    delegation_completed: bool | None = None
+    if worker_started:
+        delegation_completed = any(
+            (_event_value(event, "payload", {}) or {}).get("status")
+            == "WORKER_COMPLETED"
+            for event in worker_completed_events
+        )
     resumed_index = (
         names.index("ORCHESTRATOR_RESUMED")
         if "ORCHESTRATOR_RESUMED" in names
@@ -978,16 +1040,37 @@ def qualification_attempt_metrics(
         for index, event in enumerate(events)
         if _event_name(event) == "MODEL_RESPONSE"
     )
+    orchestrator_resumed: bool | None = (
+        "ORCHESTRATOR_RESUMED" in names if delegation_completed else None
+    )
+    gaia2_evaluated: bool | None = (
+        execution.native_validation_completed if orchestrator_resumed else None
+    )
+    gaia2_success: bool | None = (
+        execution.gaia2_success if gaia2_evaluated else None
+    )
     return {
         "artifact_dir": execution.artifact_dir,
+        "end_to_end_contract_pass": execution.infrastructure_pass,
+        "legacy_infrastructure_pass": execution.infrastructure_pass,
         "infrastructure_pass": execution.infrastructure_pass,
+        "runtime_available": runtime_available,
+        "environment_initialized": execution.direct_action_result is not None,
+        "model_call_completed": model_call_completed,
+        "terminal_trace_complete": terminal_coverage,
         "native_validation_completed": execution.native_validation_completed,
-        "gaia2_success": execution.gaia2_success,
+        "gaia2_success": gaia2_success,
+        "gaia2_evaluated": gaia2_evaluated,
         "terminal_coverage": terminal_coverage,
         "model_identity_verified": model_verified,
         "provider_identity_verified": provider_verified,
+        "worker_tool_executed": worker_tool_success if worker_started else None,
         "worker_tool_call_success": worker_tool_success,
+        "artifact_validator_reached": artifact_validator_reached,
+        "artifact_schema_valid": artifact_schema_valid,
         "worker_artifact_valid": worker_artifact_valid,
+        "delegation_completed": delegation_completed,
+        "orchestrator_resumed": orchestrator_resumed,
         "continuation_response_accepted": continuation_response_accepted,
         "unclassified_model_call_failures": unclassified_failures,
         "model_call_failures": [
@@ -1010,8 +1093,19 @@ def qualification_gate(attempts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     counts = {
         "attempts": len(attempts),
         "infrastructure_passes": count("infrastructure_pass"),
+        "end_to_end_contract_passes": count("end_to_end_contract_pass"),
+        "runtime_available": count("runtime_available"),
+        "environment_initialized": count("environment_initialized"),
+        "model_calls_completed": count("model_call_completed"),
+        "terminal_trace_complete": count("terminal_trace_complete"),
         "model_identity_verified": count("model_identity_verified"),
         "provider_identity_verified": count("provider_identity_verified"),
+        "worker_tools_executed": count("worker_tool_executed"),
+        "artifact_validators_reached": count("artifact_validator_reached"),
+        "artifact_schemas_valid": count("artifact_schema_valid"),
+        "delegations_completed": count("delegation_completed"),
+        "orchestrators_resumed": count("orchestrator_resumed"),
+        "gaia2_evaluated": count("gaia2_evaluated"),
         "worker_tool_call_successes": count("worker_tool_call_success"),
         "valid_worker_artifacts": count("worker_artifact_valid"),
         "accepted_continuation_responses": count(

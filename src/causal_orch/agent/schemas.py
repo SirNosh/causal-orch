@@ -63,6 +63,19 @@ class Confidence(str, Enum):
     HIGH = "HIGH"
 
 
+class ArtifactRejectionCategory(str, Enum):
+    MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
+    UNKNOWN_FIELD = "UNKNOWN_FIELD"
+    INVALID_ENUM_VALUE = "INVALID_ENUM_VALUE"
+    INVALID_FIELD_TYPE = "INVALID_FIELD_TYPE"
+    INVALID_FINDING_STRUCTURE = "INVALID_FINDING_STRUCTURE"
+    EMPTY_FINDINGS = "EMPTY_FINDINGS"
+    INVALID_EVIDENCE_REFERENCE = "INVALID_EVIDENCE_REFERENCE"
+    INVALID_CONFIDENCE = "INVALID_CONFIDENCE"
+    OBJECTIVE_MISMATCH = "OBJECTIVE_MISMATCH"
+    MALFORMED_ARGUMENT_JSON = "MALFORMED_ARGUMENT_JSON"
+
+
 class ValidationError(ValueError):
     """A schema error carrying the protocol rejection vocabulary."""
 
@@ -350,3 +363,75 @@ class EvidenceReport:
             "contradictions": list(self.contradictions),
             "recommended_next_action": self.recommended_next_action,
         }
+
+
+def diagnose_evidence_report(
+    value: Any,
+    *,
+    objective: str | None = None,
+    allowed_evidence_refs: set[str] | None = None,
+) -> tuple[str, ...]:
+    """Classify contract defects without changing validator acceptance."""
+
+    categories: list[ArtifactRejectionCategory] = []
+
+    def add(category: ArtifactRejectionCategory) -> None:
+        if category not in categories:
+            categories.append(category)
+
+    fields = {
+        "artifact_type",
+        "objective",
+        "status",
+        "findings",
+        "uncertainties",
+        "contradictions",
+        "recommended_next_action",
+    }
+    if not isinstance(value, Mapping):
+        add(ArtifactRejectionCategory.INVALID_FIELD_TYPE)
+        return tuple(category.value for category in categories)
+    missing = fields - set(value)
+    unknown = set(value) - fields
+    if missing:
+        add(ArtifactRejectionCategory.MISSING_REQUIRED_FIELD)
+    if unknown:
+        add(ArtifactRejectionCategory.UNKNOWN_FIELD)
+    if value.get("artifact_type") != "EVIDENCE_REPORT":
+        add(ArtifactRejectionCategory.INVALID_ENUM_VALUE)
+    if value.get("status") not in {status.value for status in ArtifactStatus}:
+        add(ArtifactRejectionCategory.INVALID_ENUM_VALUE)
+    if objective is not None and value.get("objective") != objective:
+        add(ArtifactRejectionCategory.OBJECTIVE_MISMATCH)
+    for name in ("objective",):
+        if name in value and not isinstance(value[name], str):
+            add(ArtifactRejectionCategory.INVALID_FIELD_TYPE)
+    for name in ("findings", "uncertainties", "contradictions"):
+        if name in value and not isinstance(value[name], (list, tuple)):
+            add(ArtifactRejectionCategory.INVALID_FIELD_TYPE)
+    recommended = value.get("recommended_next_action")
+    if "recommended_next_action" in value and recommended is not None and not isinstance(recommended, str):
+        add(ArtifactRejectionCategory.INVALID_FIELD_TYPE)
+
+    findings = value.get("findings")
+    if isinstance(findings, (list, tuple)):
+        for finding in findings:
+            if not isinstance(finding, Mapping):
+                add(ArtifactRejectionCategory.INVALID_FINDING_STRUCTURE)
+                continue
+            finding_fields = {"claim", "evidence_refs", "confidence"}
+            if set(finding) != finding_fields:
+                add(ArtifactRejectionCategory.INVALID_FINDING_STRUCTURE)
+            if finding.get("confidence") not in {
+                confidence.value for confidence in Confidence
+            }:
+                add(ArtifactRejectionCategory.INVALID_CONFIDENCE)
+            refs = finding.get("evidence_refs")
+            if not isinstance(refs, (list, tuple)) or not refs:
+                add(ArtifactRejectionCategory.INVALID_EVIDENCE_REFERENCE)
+            elif allowed_evidence_refs is not None and any(
+                ref not in allowed_evidence_refs for ref in refs
+            ):
+                add(ArtifactRejectionCategory.INVALID_EVIDENCE_REFERENCE)
+
+    return tuple(category.value for category in categories)
