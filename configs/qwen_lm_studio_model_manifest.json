@@ -1,0 +1,62 @@
+{
+  "snapshot_timestamp_utc": "2026-07-26T20:15:00Z",
+  "condition": {
+    "condition_id": "QWEN3_6_35B_A3B_UD_Q4_K_XL_LM_STUDIO",
+    "qualification_status": "PENDING_BREADTH_SCREEN",
+    "role": "PRIMARY_CANDIDATE"
+  },
+  "provider_manifest": {
+    "provider_name": "LM Studio llama.cpp 2.27.1",
+    "provider_slug": "lm-studio-llama-cpp-2.27.1-local",
+    "execution": "local_loopback",
+    "llama_cpp_build": 10099,
+    "llama_cpp_commit": "1a064ab09",
+    "backend_binary_sha256": "5842b7a72a296340a427fbc141eb7c5d18f3a491f176b8e0e117728edb1098b5",
+    "data_policy": "local_only_no_provider_collection"
+  },
+  "provider_manifest_sha256": "4d081c4476445f3ad31ca7c86e2578aa06a343970b5ee3f220cb4cb42ebda5f7",
+  "model_manifest": {
+    "snapshot_timestamp_utc": "2026-07-26T20:15:00Z",
+    "requested_model_slug": "unsloth/qwen3.6-35b-a3b",
+    "original_model_slug": "Qwen/Qwen3.6-35B-A3B",
+    "gguf_repository": "unsloth/Qwen3.6-35B-A3B-GGUF",
+    "gguf_revision": "a483e9e6cbd595906af30beda3187c2663a1118c",
+    "gguf_filename": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+    "gguf_sha256": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450",
+    "gguf_size_bytes": 22360456160,
+    "quantization": "UD-Q4_K_XL",
+    "context_length": 131072,
+    "selected_provider": "LM Studio llama.cpp 2.27.1",
+    "llama_cpp_repository": "https://github.com/ggml-org/llama.cpp",
+    "llama_cpp_branch": "LM Studio backend 2.27.1",
+    "llama_cpp_commit": "1a064ab09",
+    "server_binary_sha256": "5842b7a72a296340a427fbc141eb7c5d18f3a491f176b8e0e117728edb1098b5",
+    "cuda_version": "12",
+    "gpu_name": "NVIDIA GeForce RTX 4070 SUPER",
+    "driver_version": "595.97",
+    "kv_cache_type_k": "LM_STUDIO_MANAGED",
+    "kv_cache_type_v": "LM_STUDIO_MANAGED",
+    "jinja": true,
+    "tool_call_format": "native_openai",
+    "preserve_thinking": true,
+    "sampling": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "max_tokens": 4096
+    },
+    "manifest_sha256": "3ac0fa1ef98081965a24ba6aa08162f4bf2d30bcf287621ed3b8b40ec017c83f"
+  },
+  "runtime": {
+    "model_path": "C:/Users/devya/.cache/lm-studio/models/unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+    "server_binary_path": "C:/Users/devya/.cache/lm-studio/extensions/backends/llama.cpp-win-x86_64-nvidia-cuda12-avx2-2.27.1/llama-server.exe",
+    "endpoint": "http://127.0.0.1:1234/v1/chat/completions",
+    "identity_endpoint": "http://127.0.0.1:1234/v1/models",
+    "host": "127.0.0.1",
+    "port": 1234,
+    "context_length": 131072,
+    "parallel_slots": 4,
+    "reasoning": true,
+    "reasoning_preserve": true
+  }
+}

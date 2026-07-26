@@ -113,6 +113,9 @@ class OpenRouterConfig:
     allow_fallbacks: bool = False
     require_parameters: bool = True
     data_collection: str = "allow"
+    provider_stop_forwarded: bool = True
+    preserve_raw_provider_response: bool = False
+    compatibility_condition: str | None = None
 
     def __post_init__(self) -> None:
         validate_model_slug(self.model_slug)
@@ -128,6 +131,14 @@ class OpenRouterConfig:
             raise ManifestError("provider parameter requirement is fixed to true")
         if self.data_collection not in {"allow", "deny"}:
             raise ManifestError("data_collection must be 'allow' or 'deny'")
+        if not self.provider_stop_forwarded and (
+            not self.preserve_raw_provider_response
+            or not self.compatibility_condition
+        ):
+            raise ManifestError(
+                "local-stop compatibility requires raw-response preservation "
+                "and an explicit condition label"
+            )
         if not self.endpoint:
             raise ManifestError("endpoint must be non-empty")
         for key, value in self.attribution_headers.items():
@@ -174,6 +185,7 @@ class LocalLlamaConfig:
     sampling: LocalSamplingConfig = field(default_factory=LocalSamplingConfig)
     time: TimeConfig = field(default_factory=TimeConfig)
     endpoint: str = LOCAL_COMPLETIONS_URL
+    identity_endpoint: str | None = None
     context_length: int = 32768
     reasoning: Mapping[str, Any] = field(
         default_factory=lambda: {
@@ -199,11 +211,21 @@ class LocalLlamaConfig:
         ):
             if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
                 raise ManifestError(f"{label} must be a lowercase SHA-256")
-        if self.context_length != 32768:
-            raise ManifestError("local context length is fixed at 32768")
-        parsed = urlparse(self.endpoint)
-        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
-            raise ManifestError("local endpoint must be an HTTP loopback URL")
+        if type(self.context_length) is not int or self.context_length < 1:
+            raise ManifestError("local context length must be positive")
+        for label, endpoint in (
+            ("local endpoint", self.endpoint),
+            ("local identity endpoint", self.identity_endpoint),
+        ):
+            if endpoint is None:
+                continue
+            parsed = urlparse(endpoint)
+            if parsed.scheme != "http" or parsed.hostname not in {
+                "127.0.0.1",
+                "localhost",
+                "::1",
+            }:
+                raise ManifestError(f"{label} must be an HTTP loopback URL")
         if self.allow_fallbacks or not self.require_parameters:
             raise ManifestError("local provider fallback and parameter relaxation are disabled")
         if self.data_collection != "deny":
@@ -215,7 +237,9 @@ class LocalLlamaConfig:
 
     @property
     def props_endpoint(self) -> str:
-        return self.endpoint.removesuffix("/v1/chat/completions") + "/props"
+        return self.identity_endpoint or (
+            self.endpoint.removesuffix("/v1/chat/completions") + "/props"
+        )
 
     def resolved_paths(self, root: str | Path) -> tuple[Path, Path]:
         base = Path(root)
@@ -371,14 +395,14 @@ class LocalModelManifest:
         ):
             if not isinstance(value, str) or not value:
                 raise ManifestError(f"{label} is required")
-        if self.context_length != 32768:
-            raise ManifestError("local qualification context is fixed to 32K")
+        if type(self.context_length) is not int or self.context_length < 1:
+            raise ManifestError("local qualification context must be positive")
         for label, value in (
             ("gguf_sha256", self.gguf_sha256),
             ("server_binary_sha256", self.server_binary_sha256),
             ("llama_cpp_commit", self.llama_cpp_commit),
         ):
-            if len(value) not in {40, 64} or any(
+            if len(value) not in {9, 40, 64} or any(
                 char not in "0123456789abcdef" for char in value
             ):
                 raise ManifestError(f"{label} is not a lowercase hex digest")

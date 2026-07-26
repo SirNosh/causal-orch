@@ -119,13 +119,18 @@ class LocalLlamaLLMEngine(LLMEngine):
     def _verify_server(self) -> None:
         if self._server_verified:
             return
-        try:
-            response = self.props_lookup()
-        except Exception as error:
-            raise LocalLlamaProtocolError(
-                "local llama-server is unavailable",
-                error_type="TRANSPORT_ERROR",
-            ) from error
+        for attempt in range(3):
+            try:
+                response = self.props_lookup()
+                break
+            except Exception as error:
+                if attempt < 2:
+                    time.sleep(0.25 * (attempt + 1))
+                    continue
+                raise LocalLlamaProtocolError(
+                    "local provider identity endpoint is unavailable",
+                    error_type="TRANSPORT_ERROR",
+                ) from error
         status = _response_status(response)
         if status != 200:
             raise LocalLlamaProtocolError(
@@ -145,7 +150,18 @@ class LocalLlamaLLMEngine(LLMEngine):
                 "local llama-server props response is not an object",
                 error_type="INVALID_JSON_BODY",
             )
-        alias = body.get("model_alias") or body.get("model")
+        if self.config.identity_endpoint is not None:
+            models = body.get("data")
+            if not isinstance(models, list) or self.config.model_slug not in {
+                item.get("id") for item in models if isinstance(item, Mapping)
+            }:
+                raise LocalLlamaProtocolError(
+                    f"local model is not loaded: {self.config.model_slug!r}",
+                    error_type="MODEL_IDENTITY_MISMATCH",
+                )
+            alias = self.config.model_slug
+        else:
+            alias = body.get("model_alias") or body.get("model")
         if alias is not None and alias != self.config.model_slug:
             raise LocalLlamaProtocolError(
                 f"local llama-server model alias mismatch: {alias!r}",

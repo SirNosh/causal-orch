@@ -430,7 +430,7 @@ class OpenRouterLLMEngine(LLMEngine):
         }
         if self.config.reasoning is not None:
             payload["reasoning"] = dict(self.config.reasoning)
-        if stop_sequences:
+        if stop_sequences and self.config.provider_stop_forwarded:
             payload["stop"] = stop_sequences
         if schema is not None:
             payload["response_format"], _strategy = _schema_request(schema)
@@ -578,7 +578,13 @@ class OpenRouterLLMEngine(LLMEngine):
         payload = self._payload(safe_messages, stop_sequences, schema)
         prompt_hash = self._hash_json(safe_messages)
         schema_hash = self._hash_json(_safe_metadata(schema_request)) if schema_request is not None else None
-        trace_payload = {"trace_tags": dict(trace_tags), "schema_strategy": schema_strategy}
+        trace_payload = {
+            "trace_tags": dict(trace_tags),
+            "schema_strategy": schema_strategy,
+            "provider_stop_forwarded": self.config.provider_stop_forwarded,
+            "local_stop_sequences": list(stop_sequences or ()),
+            "compatibility_condition": self.config.compatibility_condition,
+        }
         self._trace(
             EventName.MODEL_REQUEST,
             requested_model_slug=self.config.model_slug,
@@ -754,6 +760,7 @@ class OpenRouterLLMEngine(LLMEngine):
                 error_type="NON_TEXT_COMPLETION",
                 request_id=request_id,
             )
+        raw_provider_response = content
         for stop_token in stop_sequences or ():
             content = content.split(stop_token)[0]
         if not content.strip():
@@ -765,12 +772,25 @@ class OpenRouterLLMEngine(LLMEngine):
 
         usage = body.get("usage") or {}
         details = usage.get("completion_tokens_details") or {}
+        semantic_completion_tokens = None
+        try:
+            from litellm import token_counter
+
+            semantic_completion_tokens = token_counter(
+                model=self.config.model_slug,
+                text=content,
+            )
+        except Exception:
+            pass
         metadata = {
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
+            "provider_completion_tokens": usage.get("completion_tokens"),
+            "semantic_completion_tokens_before_stop": semantic_completion_tokens,
             "total_tokens": usage.get("total_tokens"),
             "reasoning_tokens": details.get("reasoning_tokens", usage.get("reasoning_tokens")),
             "completion_duration": time.monotonic() - started,
+            "provider_end_to_end_latency": time.monotonic() - started,
             "request_id": request_id,
             "returned_model": returned_model,
             "provider": provider,
@@ -782,6 +802,20 @@ class OpenRouterLLMEngine(LLMEngine):
                 "additional_trace_tags": dict(trace_tags),
             },
         }
+        response_payload = {
+            "request_id": request_id,
+            "trace_tags": dict(trace_tags),
+            "provider_identity_source": provider_source,
+            "provider_stop_forwarded": self.config.provider_stop_forwarded,
+            "local_stop_sequences": list(stop_sequences or ()),
+            "provider_completion_tokens": metadata["provider_completion_tokens"],
+            "semantic_completion_tokens_before_stop": semantic_completion_tokens,
+            "semantic_token_count_source": "litellm.token_counter",
+            "provider_end_to_end_latency": metadata["provider_end_to_end_latency"],
+            "compatibility_condition": self.config.compatibility_condition,
+        }
+        if self.config.preserve_raw_provider_response:
+            response_payload["raw_provider_response"] = raw_provider_response
         self._trace(
             EventName.MODEL_RESPONSE,
             requested_model_slug=self.config.model_slug,
@@ -796,7 +830,7 @@ class OpenRouterLLMEngine(LLMEngine):
             total_tokens=metadata["total_tokens"],
             wall_latency=metadata["completion_duration"],
             retry_count=retry_count,
-            payload={"request_id": request_id, "trace_tags": dict(trace_tags), "provider_identity_source": provider_source},
+            payload=response_payload,
         )
         self._pending_request_ids.remove(correlation_id)
         return content, metadata

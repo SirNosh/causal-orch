@@ -27,8 +27,15 @@ from are.simulation.agents.default_agent.prompts.system_prompt import (
 from are.simulation.types import SimulatedGenerationTimeConfig
 
 from causal_orch.models.local_llama_engine import LocalLlamaLLMEngine
-from causal_orch.models.manifests import LocalLlamaConfig, LocalModelManifest
+from causal_orch.models.manifests import (
+    LocalLlamaConfig,
+    LocalModelManifest,
+    ModelManifest,
+    OpenRouterConfig,
+)
+from causal_orch.models.openrouter_engine import OpenRouterLLMEngine
 from causal_orch.tracing.context import RunContext
+from causal_orch.tracing.events import EventName
 from causal_orch.tracing.sink import InMemoryTraceSink
 from run_smoke import Gaia2SmokeHarness, _native_success, _redact_error
 
@@ -38,18 +45,37 @@ class StockAREBuilder:
 
     def __init__(
         self,
-        model_config: LocalLlamaConfig,
+        model_config: LocalLlamaConfig | OpenRouterConfig,
         trace_sink: InMemoryTraceSink,
     ) -> None:
         self.model_config = model_config
         self.trace_sink = trace_sink
+        self._provider_preverified = False
 
-    def build(self, agent_config: Any, env: Any) -> ARESimulationAgent:
+    def preflight(self) -> None:
+        if not isinstance(self.model_config, LocalLlamaConfig):
+            return
         engine = LocalLlamaLLMEngine(
             config=self.model_config,
-            trace_sink=self.trace_sink,
             root=Path(__file__).resolve().parents[1],
+            verify_artifacts=False,
         )
+        engine._verify_server()
+        self._provider_preverified = True
+
+    def build(self, agent_config: Any, env: Any) -> ARESimulationAgent:
+        if isinstance(self.model_config, LocalLlamaConfig):
+            engine = LocalLlamaLLMEngine(
+                config=self.model_config,
+                trace_sink=self.trace_sink,
+                root=Path(__file__).resolve().parents[1],
+            )
+            engine._server_verified = self._provider_preverified
+        else:
+            engine = OpenRouterLLMEngine(
+                config=self.model_config,
+                trace_sink=self.trace_sink,
+            )
         base_config = agent_config.get_base_agent_config()
         base_agent = are_simulation_react_json_agent(engine, base_config)
         return ARESimulationAgent(
@@ -66,7 +92,10 @@ class StockAREBuilder:
 
 
 class StockAREConfigBuilder:
-    def __init__(self, model_config: LocalLlamaConfig) -> None:
+    def __init__(
+        self,
+        model_config: LocalLlamaConfig | OpenRouterConfig,
+    ) -> None:
         self.config = ARESimulationReactAgentConfig(
             agent_name="default",
             base_agent_config=ARESimulationReactBaseAgentConfig(
@@ -114,8 +143,14 @@ def baseline_factory(
     local = json.loads(
         model_manifest_path.read_text(encoding="utf-8")
     )
-    model_manifest = LocalModelManifest.from_dict(local["model_manifest"])
     provider = local["provider_manifest"]
+    manifest_data = local["model_manifest"]
+    is_local = "gguf_filename" in manifest_data
+    model_manifest = (
+        LocalModelManifest.from_dict(manifest_data)
+        if is_local
+        else ModelManifest.from_dict(manifest_data)
+    )
     trace_sink = InMemoryTraceSink(
         context=RunContext(
             run_id=f"baseline-{scenario_id}-{uuid4().hex[:12]}",
@@ -129,22 +164,55 @@ def baseline_factory(
         )
     )
     runtime = local["runtime"]
-    reasoning = {
-        "enable_thinking": bool(runtime.get("reasoning", True)),
-        "preserve_thinking": bool(runtime.get("reasoning_preserve", True)),
-    }
-    if model_manifest.tool_call_format == "xml":
-        reasoning["tool_call_format"] = "xml"
-    model_config = LocalLlamaConfig(
-        model_slug=model_manifest.requested_model_slug,
-        provider=provider["provider_name"],
-        model_path=runtime["model_path"],
-        model_sha256=model_manifest.gguf_sha256,
-        server_binary_path=runtime["server_binary_path"],
-        server_binary_sha256=model_manifest.server_binary_sha256,
-        endpoint=runtime["endpoint"],
-        reasoning=reasoning,
-    )
+    if is_local:
+        reasoning = {
+            "enable_thinking": bool(runtime.get("reasoning", True)),
+            "preserve_thinking": bool(runtime.get("reasoning_preserve", True)),
+        }
+        if model_manifest.tool_call_format == "xml":
+            reasoning["tool_call_format"] = "xml"
+        model_config = LocalLlamaConfig(
+            model_slug=model_manifest.requested_model_slug,
+            provider=provider["provider_name"],
+            model_path=runtime["model_path"],
+            model_sha256=model_manifest.gguf_sha256,
+            server_binary_path=runtime["server_binary_path"],
+            server_binary_sha256=model_manifest.server_binary_sha256,
+            endpoint=runtime["endpoint"],
+            identity_endpoint=runtime.get("identity_endpoint"),
+            context_length=runtime.get(
+                "context_length", model_manifest.context_length
+            ),
+            reasoning=reasoning,
+        )
+    else:
+        from dotenv import dotenv_values
+
+        key = (
+            dotenv_values(Path(__file__).resolve().parents[1] / ".env").get(
+                runtime["api_key_env"]
+            )
+            or ""
+        ).strip()
+        if not key:
+            raise RuntimeError(f"{runtime['api_key_env']} is missing from .env")
+        model_config = OpenRouterConfig(
+            model_slug=model_manifest.requested_model_slug,
+            provider=provider["provider_name"],
+            routing_provider_slug=local["routing_provider_slug"],
+            endpoint=runtime["endpoint"],
+            api_key=key,
+            data_collection=provider["data_policy"],
+            provider_stop_forwarded=runtime.get(
+                "provider_stop_forwarded", True
+            ),
+            preserve_raw_provider_response=runtime.get(
+                "preserve_raw_provider_response", False
+            ),
+            compatibility_condition=(
+                local.get("condition", {}).get("condition_id")
+            ),
+        )
     return Gaia2SmokeHarness(
         scenario_path=scenario_path,
         agent_builder=StockAREBuilder(model_config, trace_sink),
@@ -156,7 +224,10 @@ def baseline_factory(
     )
 
 
-def pinned_baseline_factory(attempt: int) -> Gaia2SmokeHarness:
+def pinned_baseline_factory(
+    attempt: int,
+    model_manifest_path: Path | None = None,
+) -> Gaia2SmokeHarness:
     root = Path(__file__).resolve().parents[1]
     gaia = json.loads(
         (root / "configs" / "gaia2_manifest.json").read_text(encoding="utf-8")
@@ -167,7 +238,10 @@ def pinned_baseline_factory(attempt: int) -> Gaia2SmokeHarness:
         scenario_path=root / gaia["scenario_files"][scenario_id],
         scenario_id=scenario_id,
         capability=gaia["selection"]["capability"],
-        model_manifest_path=root / "configs" / "local_model_manifest.json",
+        model_manifest_path=(
+            model_manifest_path
+            or root / "configs" / "local_model_manifest.json"
+        ),
     )
 
 
@@ -184,6 +258,7 @@ def _attempt_result(
     success = None
     error = None
     try:
+        harness.agent_builder.preflight()
         harness._start()
         if "DELEGATE" in harness.agent.react_agent.tools:
             raise RuntimeError("stock baseline unexpectedly exposed DELEGATE")
@@ -205,7 +280,37 @@ def _attempt_result(
         if getattr(harness, "agent", None) is not None
         else ()
     )
-    valid_actions = sum(log.get_type() == "tool_call" for log in logs)
+    tool_logs = [log for log in logs if log.get_type() == "tool_call"]
+    valid_actions = sum(
+        not (
+            getattr(log, "tool_name", None)
+            == "AgentUserInterface__send_message_to_user"
+            and isinstance(getattr(log, "tool_arguments", None), dict)
+            and log.tool_arguments.get("content")
+            == "Max iterations (12) reached. Stopping."
+        )
+        for log in tool_logs
+    )
+    preserve_raw = bool(
+        getattr(model_config, "preserve_raw_provider_response", False)
+    )
+    compatibility_trace = (
+        [
+            event.to_dict()
+            for event in events
+            if event.event_type
+            in {
+                EventName.MODEL_REQUEST,
+                EventName.MODEL_RESPONSE,
+                EventName.MODEL_CALL_FAILED,
+                EventName.MODEL_IDENTITY_MISMATCH,
+                EventName.PROVIDER_IDENTITY_MISMATCH,
+                EventName.PROVIDER_IDENTITY_UNVERIFIABLE,
+            }
+        ]
+        if preserve_raw
+        else None
+    )
     return {
         "attempt": attempt,
         "scenario_id": scenario_id,
@@ -217,6 +322,10 @@ def _attempt_result(
         ),
         "model_responses": len(responses),
         "valid_orchestrator_actions": valid_actions,
+        "fallbacks": sum(
+            event.event_type == EventName.PROVIDER_IDENTITY_MISMATCH
+            for event in events
+        ),
         "model_provider_identity_verified": bool(responses)
         and all(
             event.requested_model_slug == model_config.model_slug
@@ -229,13 +338,17 @@ def _attempt_result(
             for event in failures
         ),
         "error": error,
+        "compatibility_trace": compatibility_trace,
     }
 
 
-def run_baseline(attempts: int = 5) -> dict[str, Any]:
+def run_baseline(
+    attempts: int = 5,
+    model_manifest_path: Path | None = None,
+) -> dict[str, Any]:
     results = []
     for attempt in range(1, attempts + 1):
-        harness = pinned_baseline_factory(attempt)
+        harness = pinned_baseline_factory(attempt, model_manifest_path)
         try:
             results.append(
                 _attempt_result(
@@ -329,22 +442,31 @@ def run_breadth_screen(
     successes = sum(result["gaia2_success"] is True for result in results)
     success_rate = successes / len(results)
     gate = screen["gate"]
+    success_floor = gate.get("minimum_gaia2_successes")
+    success_range = gate.get("diagnostic_success_rate_range")
     passed = (
         all(result["gaia2_evaluated"] for result in results)
         and not sum(
             result["unclassified_runtime_failures"] for result in results
         )
         and action_rate >= gate["minimum_valid_orchestrator_action_rate"]
-        and successes >= gate["minimum_gaia2_successes"]
-        and gate["diagnostic_success_rate_range"][0]
-        <= success_rate
-        <= gate["diagnostic_success_rate_range"][1]
+        and (success_floor is None or successes >= success_floor)
+        and (
+            success_range is None
+            or success_range[0] <= success_rate <= success_range[1]
+        )
         and all(
             result["model_provider_identity_verified"] for result in results
         )
+        and not sum(result["fallbacks"] for result in results)
     )
+    model_condition = json.loads(
+        model_manifest_path.read_text(encoding="utf-8")
+    ).get("condition", {})
     return {
-        "condition": "STOCK_ARE_DIRECT_BREADTH_SCREEN",
+        "condition": model_condition.get(
+            "condition_id", "STOCK_ARE_DIRECT_BREADTH_SCREEN"
+        ),
         "qualified": passed,
         "attempts": len(results),
         "gaia2_evaluated": sum(result["gaia2_evaluated"] for result in results),
@@ -357,6 +479,7 @@ def run_breadth_screen(
         "identity_verified_attempts": sum(
             result["model_provider_identity_verified"] for result in results
         ),
+        "fallbacks": sum(result["fallbacks"] for result in results),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "results": results,
     }
@@ -380,7 +503,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             Path(args.model_manifest),
         )
         if args.screen_manifest
-        else run_baseline(args.attempts)
+        else run_baseline(args.attempts, Path(args.model_manifest))
     )
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:

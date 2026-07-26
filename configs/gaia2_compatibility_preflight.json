@@ -1,0 +1,36 @@
+{
+  "source_repo": "meta-agents-research-environments/gaia2",
+  "gaia2_revision": "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99",
+  "split": "validation",
+  "attempts_per_scenario": 1,
+  "selection": {
+    "excluded_capabilities": [
+      "time"
+    ],
+    "rationale": "Two-scenario transport-compatibility preflight before the frozen breadth screen."
+  },
+  "scenarios": [
+    {
+      "capability": "search",
+      "row_id": "0022_bfecjsp9maplnofl92t81qkj2q2lfjrx",
+      "scenario_id": "scenario_universe_24_as82zr",
+      "scenario_sha256": "4cb5c8fb933cc17a3b281847f6ad180e57397375ad0522bbda5f69117c184913",
+      "scenario_file": "artifacts/gaia2_screen/scenario_universe_24_as82zr.json"
+    },
+    {
+      "capability": "ambiguity",
+      "row_id": "0137_66e1hycxx6kg6fux28hhbytn5x0jh07t",
+      "scenario_id": "scenario_universe_26_n5mmwn",
+      "scenario_sha256": "46776898c84ec6dcf92d024265496fca32e8f2656fe515c0f25b3857ae25c31b",
+      "scenario_file": "artifacts/gaia2_screen/scenario_universe_26_n5mmwn.json"
+    }
+  ],
+  "gate": {
+    "native_gaia2_evaluation_reached": "2/2",
+    "maximum_unclassified_runtime_failures": 0,
+    "minimum_valid_orchestrator_action_rate": 0.95,
+    "stable_model_provider_identity": "2/2",
+    "maximum_fallbacks": 0
+  },
+  "manifest_sha256": "6168a8803f9771d3b8386366c9dfc90723f618c57befaf2c33494e383a494022"
+}

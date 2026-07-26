@@ -185,6 +185,80 @@ class ModelIdentityTests(unittest.TestCase):
             ["pinned-provider"],
         )
 
+    def test_local_stop_compatibility_preserves_raw_and_truncates_for_parser(self):
+        raw = (
+            "Thought: complete\n"
+            "Action:\n"
+            '{"action":"final_answer","action_input":{"answer":"44"}}'
+            "<end_action>\n"
+            "unwanted trailing text\n"
+            "Observation:\n"
+            "more unwanted text"
+        )
+        reply = response()
+        reply.body["choices"][0]["message"]["content"] = raw
+        transport = FakeTransport(reply)
+        sink = InMemoryTraceSink()
+        config = OpenRouterConfig(
+            MODEL_CANDIDATE_ORDER[1],
+            "PinnedProvider",
+            routing_provider_slug="pinned-provider",
+            provider_stop_forwarded=False,
+            preserve_raw_provider_response=True,
+            compatibility_condition=(
+                "NEMOTRON3_SUPER_OPENROUTER_NVIDIA_LOCAL_STOP_TRUNCATION"
+            ),
+        )
+        reply.body["model"] = config.model_slug
+        text, metadata = OpenRouterLLMEngine(
+            config,
+            trace_sink=sink,
+            transport=transport,
+        ).chat_completion(
+            [{"role": "user", "content": "complete"}],
+            stop_sequences=["<end_action>", "Observation:"],
+        )
+
+        self.assertEqual(
+            text,
+            "Thought: complete\n"
+            "Action:\n"
+            '{"action":"final_answer","action_input":{"answer":"44"}}',
+        )
+        request = transport.requests[0].json_body
+        self.assertNotIn("stop", request)
+        self.assertEqual(request["temperature"], 0.2)
+        self.assertEqual(request["top_p"], 0.9)
+        self.assertEqual(request["max_tokens"], 4096)
+        self.assertEqual(
+            request["provider"],
+            {
+                "only": ["pinned-provider"],
+                "allow_fallbacks": False,
+                "require_parameters": True,
+                "data_collection": "allow",
+            },
+        )
+        response_event = sink.events[-1]
+        self.assertEqual(response_event.provider_slug, "PinnedProvider")
+        self.assertEqual(
+            response_event.payload["raw_provider_response"],
+            raw,
+        )
+        self.assertFalse(response_event.payload["provider_stop_forwarded"])
+        self.assertEqual(
+            response_event.payload["local_stop_sequences"],
+            ["<end_action>", "Observation:"],
+        )
+        self.assertEqual(
+            metadata["provider_completion_tokens"],
+            7,
+        )
+        self.assertIsInstance(
+            metadata["semantic_completion_tokens_before_stop"],
+            int,
+        )
+
     def test_reasoning_and_attribution_are_optional_configured_fields(self):
         transport = FakeTransport(response())
         config = OpenRouterConfig(

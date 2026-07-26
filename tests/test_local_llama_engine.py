@@ -112,6 +112,26 @@ class LocalLlamaEngineTests(unittest.TestCase):
         self.assertEqual(len(terminals), 1)
         self.assertEqual(terminals[0].error_type, "MODEL_IDENTITY_MISMATCH")
 
+    def test_verifies_openai_model_list_identity(self):
+        transport = FakeTransport(completion({"content": "OK"}))
+        with tempfile.TemporaryDirectory() as directory:
+            engine = self.engine(directory, transport)
+            engine.config = LocalLlamaConfig(
+                model_slug=engine.config.model_slug,
+                model_path=engine.config.model_path,
+                model_sha256=engine.config.model_sha256,
+                server_binary_path=engine.config.server_binary_path,
+                server_binary_sha256=engine.config.server_binary_sha256,
+                identity_endpoint="http://127.0.0.1:1234/v1/models",
+            )
+            engine.props_lookup = lambda: HTTPResponse(
+                200, {"data": [{"id": engine.config.model_slug}]}
+            )
+            response, _metadata = engine.chat_completion(
+                [{"role": "user", "content": "hello"}]
+            )
+        self.assertEqual(response, "OK")
+
     def test_classifies_llama_grammar_sampler_initialization_failure(self):
         transport = FakeTransport(
             HTTPResponse(
