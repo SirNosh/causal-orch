@@ -1,0 +1,12 @@
+{
+  "created_at": "2026-07-25T00:06:09.660435+00:00",
+  "error": "SmokePrerequisiteError: TRACE_ORCHESTRATOR_CONTINUATION_RESPONSE_MISSING",
+  "failure_stage": "TRACE_AUDIT",
+  "gaia2_success": false,
+  "infrastructure_pass": false,
+  "model": "openai/gpt-oss-20b:free",
+  "native_validation_completed": true,
+  "provider": "Darkbloom",
+  "run_id": "smoke-scenario_universe_28_2nr5po-b19cacc70215",
+  "scenario_id": "scenario_universe_28_2nr5po"
+}

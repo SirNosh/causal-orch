@@ -1,0 +1,14 @@
+{
+  "branch": "nanbeige42",
+  "build_number": 10042,
+  "commit": "d28da865bf284acaecc98ad18a3c1f607c0fd754",
+  "compiler": "MSVC 19.41.34120.0",
+  "cuda_version": "13.0.48",
+  "data_policy": "local_only_no_provider_collection",
+  "execution": "local_loopback",
+  "manifest_sha256": "8cd77edda03448e978c6771539c94964bb103b91465a9885dc47df76fd916942",
+  "provider_name": "Nanbeige/llama.cpp",
+  "provider_slug": "nanbeige-llama-cpp-local",
+  "repository": "https://github.com/Nanbeige/llama.cpp",
+  "server_binary_sha256": "ffd50a1818124aec857b9bedee3dadcf905548f7fc83a9c06dcdaa281d8effab"
+}

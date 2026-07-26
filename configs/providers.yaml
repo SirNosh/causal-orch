@@ -1,0 +1,8 @@
+provider_api: local_openai_compatible
+endpoint: http://127.0.0.1:8080/v1/chat/completions
+pinned_provider: Nanbeige/llama.cpp
+routing_provider_slug: nanbeige-llama-cpp-local
+allow_fallbacks: false
+require_parameters: true
+data_collection: deny
+provider_manifest_sha256: 8cd77edda03448e978c6771539c94964bb103b91465a9885dc47df76fd916942

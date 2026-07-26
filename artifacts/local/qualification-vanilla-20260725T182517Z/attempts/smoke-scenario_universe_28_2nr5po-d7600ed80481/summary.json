@@ -1,0 +1,15 @@
+{
+  "created_at": "2026-07-25T22:29:33.139877+00:00",
+  "direct_action_completed": true,
+  "direct_action_result_sha256": "d5c33c0e4a3f06cb548b7b2568b7fd1a07274da580be62a1982d48f0e40ef067",
+  "direct_action_tool": "Emails__list_emails",
+  "error": "SmokePrerequisiteError: SMOKE_WORKER_NOT_COMPLETED:{'classification': 'TREATMENT_FAILURE', 'detail': 'worker exhausted its fixed budget', 'reason': 'TIMEOUT_OR_BUDGET_EXHAUSTION'}",
+  "failure_stage": "WORKER_EXECUTION",
+  "gaia2_success": false,
+  "infrastructure_pass": false,
+  "model": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+  "native_validation_completed": false,
+  "provider": "Nanbeige/llama.cpp",
+  "run_id": "smoke-scenario_universe_28_2nr5po-d7600ed80481",
+  "scenario_id": "scenario_universe_28_2nr5po"
+}

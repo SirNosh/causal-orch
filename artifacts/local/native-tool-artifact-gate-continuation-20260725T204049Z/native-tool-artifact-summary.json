@@ -1,0 +1,270 @@
+{
+  "attempts": 5,
+  "condition": {
+    "interface_label": "NATIVE_TYPED_TOOL_INTERFACE",
+    "orchestrator_present": false,
+    "scenario_id": "scenario_universe_28_2nr5po",
+    "worker_budget": {
+      "max_output_tokens": 2000,
+      "max_steps": 8
+    }
+  },
+  "created_at": "2026-07-26T00:44:15.047104+00:00",
+  "passes": 4,
+  "qualified": false,
+  "results": [
+    {
+      "artifact": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "Most recent email: sender rohan.deshpande@adwave.in, subject 'Exploring Partnership Opportunities for Fintech Innovations', timestamp 1728860338.73",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:5446e0c8696f467899ac1f5257a8c641"
+            ]
+          },
+          {
+            "claim": "Second most recent email: sender skjaersgaard@cs.au.dk, subject 'Exploring Potential Collaboration Opportunities', timestamp 1728809768.53",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:5446e0c8696f467899ac1f5257a8c641"
+            ]
+          },
+          {
+            "claim": "Third most recent email: sender kasper.rasmussen@student.au.dk, subject 'Exploring Opportunities for Robotics in Fintech', timestamp 1728782785.3",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:5446e0c8696f467899ac1f5257a8c641"
+            ]
+          },
+          {
+            "claim": "Fourth most recent email: sender astrid.rasmussen@gaia2mail.com, subject 'Collaboration Opportunity for Your Startup', timestamp 1728606937",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:5446e0c8696f467899ac1f5257a8c641"
+            ]
+          },
+          {
+            "claim": "Fifth most recent email: sender rohinidesai70@gaia2mail.com, subject 'Exploring the Harmony of Innovation and Music', timestamp 1728591325.87",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:5446e0c8696f467899ac1f5257a8c641"
+            ]
+          }
+        ],
+        "objective": "Retrieve the five most recent emails in the inbox and report each sender address and timestamp as evidence for the task.",
+        "recommended_next_action": "None \u2014 the completion criterion (report five most recent email sender addresses and timestamps) is satisfied.",
+        "status": "COMPLETE",
+        "uncertainties": [
+          "Timestamps appear to be Unix epoch seconds; exact date conversion was not performed per the bounded objective which only requires reporting sender address and timestamp as-is."
+        ]
+      },
+      "artifact_schema_valid": true,
+      "attempt_number": 1,
+      "budget_exhausted": false,
+      "model_identity_verified": true,
+      "model_requests": 2,
+      "native_exchanges": 2,
+      "passed": true,
+      "provider_identity_verified": true,
+      "real_tool_executed": true,
+      "state_write_violation": false,
+      "terminal_trace_complete": true,
+      "worker_completed": true
+    },
+    {
+      "artifact": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "Most recent email 1: sender rohan.deshpande@adwave.in, timestamp 1728860338.73",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:ee472bb399064742b4e7aa5854c959a8"
+            ]
+          },
+          {
+            "claim": "Most recent email 2: sender skjaersgaard@cs.au.dk, timestamp 1728809768.53",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:ee472bb399064742b4e7aa5854c959a8"
+            ]
+          },
+          {
+            "claim": "Most recent email 3: sender kasper.rasmussen@student.au.dk, timestamp 1728782785.3",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:ee472bb399064742b4e7aa5854c959a8"
+            ]
+          },
+          {
+            "claim": "Most recent email 4: sender astrid.rasmussen@gaia2mail.com, timestamp 1728606937",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:ee472bb399064742b4e7aa5854c959a8"
+            ]
+          },
+          {
+            "claim": "Most recent email 5: sender rohinidesai70@gaia2mail.com, timestamp 1728591325.87",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:ee472bb399064742b4e7aa5854c959a8"
+            ]
+          }
+        ],
+        "objective": "Retrieve the five most recent emails in the inbox and report each sender address and timestamp as evidence for the task.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "artifact_schema_valid": true,
+      "attempt_number": 2,
+      "budget_exhausted": false,
+      "model_identity_verified": true,
+      "model_requests": 2,
+      "native_exchanges": 2,
+      "passed": true,
+      "provider_identity_verified": true,
+      "real_tool_executed": true,
+      "state_write_violation": false,
+      "terminal_trace_complete": true,
+      "worker_completed": true
+    },
+    {
+      "artifact": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "Most recent email #1: sender rohan.deshpande@adwave.in, timestamp 1728860338.73",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:e8fcaafdbfc94614bc4f3ae0c7792d9e"
+            ]
+          },
+          {
+            "claim": "Most recent email #2: sender skjaersgaard@cs.au.dk, timestamp 1728809768.53",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:e8fcaafdbfc94614bc4f3ae0c7792d9e"
+            ]
+          },
+          {
+            "claim": "Most recent email #3: sender kasper.rasmussen@student.au.dk, timestamp 1728782785.3",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:e8fcaafdbfc94614bc4f3ae0c7792d9e"
+            ]
+          },
+          {
+            "claim": "Most recent email #4: sender astrid.rasmussen@gaia2mail.com, timestamp 1728606937",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:e8fcaafdbfc94614bc4f3ae0c7792d9e"
+            ]
+          },
+          {
+            "claim": "Most recent email #5: sender rohinidesai70@gaia2mail.com, timestamp 1728591325.87",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:e8fcaafdbfc94614bc4f3ae0c7792d9e"
+            ]
+          }
+        ],
+        "objective": "Retrieve the five most recent emails in the inbox and report each sender address and timestamp as evidence for the task.",
+        "recommended_next_action": "None \u2014 objective is complete.",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "artifact_schema_valid": true,
+      "attempt_number": 3,
+      "budget_exhausted": false,
+      "model_identity_verified": true,
+      "model_requests": 2,
+      "native_exchanges": 2,
+      "passed": true,
+      "provider_identity_verified": true,
+      "real_tool_executed": true,
+      "state_write_violation": false,
+      "terminal_trace_complete": true,
+      "worker_completed": true
+    },
+    {
+      "artifact": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "Most recent inbox email 1: Sender rohan.deshpande@adwave.in, Timestamp 1728860338.73",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:2a3ae2cb1e69420ba52d46efee3d0a80"
+            ]
+          },
+          {
+            "claim": "Most recent inbox email 2: Sender skjaersgaard@cs.au.dk, Timestamp 1728809768.53",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:2a3ae2cb1e69420ba52d46efee3d0a80"
+            ]
+          },
+          {
+            "claim": "Most recent inbox email 3: Sender kasper.rasmussen@student.au.dk, Timestamp 1728782785.3",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:2a3ae2cb1e69420ba52d46efee3d0a80"
+            ]
+          },
+          {
+            "claim": "Most recent inbox email 4: Sender astrid.rasmussen@gaia2mail.com, Timestamp 1728606937",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:2a3ae2cb1e69420ba52d46efee3d0a80"
+            ]
+          },
+          {
+            "claim": "Most recent inbox email 5: Sender rohinidesai70@gaia2mail.com, Timestamp 1728591325.87",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "worker_tool_result:2a3ae2cb1e69420ba52d46efee3d0a80"
+            ]
+          }
+        ],
+        "objective": "Retrieve the five most recent emails in the inbox and report each sender address and timestamp as evidence for the task.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "artifact_schema_valid": true,
+      "attempt_number": 4,
+      "budget_exhausted": false,
+      "model_identity_verified": true,
+      "model_requests": 2,
+      "native_exchanges": 2,
+      "passed": true,
+      "provider_identity_verified": true,
+      "real_tool_executed": true,
+      "state_write_violation": false,
+      "terminal_trace_complete": true,
+      "worker_completed": true
+    },
+    {
+      "artifact": null,
+      "artifact_schema_valid": false,
+      "attempt_number": 5,
+      "budget_exhausted": false,
+      "model_identity_verified": true,
+      "model_requests": 2,
+      "native_exchanges": 2,
+      "passed": false,
+      "provider_identity_verified": true,
+      "real_tool_executed": true,
+      "state_write_violation": false,
+      "terminal_trace_complete": true,
+      "worker_completed": false
+    }
+  ]
+}

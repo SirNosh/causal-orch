@@ -1,0 +1,11 @@
+assignment:
+  execute_probability: 0.5
+  suppress_probability: 0.5
+  ratio: 50/50
+seed: causal-orch-fixed-seed-v1
+reveal_only_for_eligible: true
+block_fields:
+  - model_condition
+  - gaia2_capability
+  - scenario_id
+  - temporal_batch

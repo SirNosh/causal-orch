@@ -1,0 +1,63 @@
+{
+  "benchmark": "Gaia2",
+  "config": "search",
+  "data_classification": "SYNTHETIC_PUBLIC_BENCHMARK",
+  "dataset_sha256": "24a56de2ca5bd70ea3280b8e4f8425af87f2177ef2cfd14c3897eb77fe13be54",
+  "gaia2_revision": "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99",
+  "manifest_sha256": "354d5498bfbd22c380d6e79eec2ecaab7878b3c9bbcba5d3fee488baca5641fa",
+  "row_count": 160,
+  "row_ids": [
+    "0296_yxauylkdn61cesadi3fx0zplw3pfd0qg"
+  ],
+  "scenario_files": {
+    "scenario_universe_28_2nr5po": "artifacts/gaia2/scenario_universe_28_2nr5po.json"
+  },
+  "scenario_ids": [
+    "scenario_universe_28_2nr5po"
+  ],
+  "scenario_sha256": {
+    "scenario_universe_28_2nr5po": "1b9d6d63fafbf554d275abc3f4667c8c231fd18a68ac3526f19c869f3773e09b"
+  },
+  "selection": {
+    "apps": [
+      "AgentUserInterface",
+      "Cabs",
+      "Calendar",
+      "Chats",
+      "City",
+      "Contacts",
+      "Emails",
+      "Files",
+      "InternalContacts",
+      "Messages",
+      "RentAFlat",
+      "Shopping"
+    ],
+    "capability": "Search",
+    "dynamic_non_user_event_count": 0,
+    "event_count": 2,
+    "reason": "Static two-event scenario with no non-user dynamic events; bounded task-relevant worker subtask via Emails__list_emails; all required email/contact state is embedded in the scenario JSON.",
+    "task": "Find the 5 most recent emails in my inbox. What is the average age of the people who sent me those emails and are also in my contacts? Round to the nearest whole number."
+  },
+  "smoke": {
+    "delegation_proposal": {
+      "allowed_read_tools": [
+        "Emails__list_emails"
+      ],
+      "completion_criterion": "Return the five most recent inbox email sender addresses and timestamps, citing the worker tool result.",
+      "context_refs": [
+        "task"
+      ],
+      "objective": "Retrieve the five most recent emails in the inbox and report each sender address and timestamp as evidence for the task.",
+      "reason_code": "INFORMATION_GAP"
+    },
+    "direct_tool_arguments": {
+      "folder_name": "INBOX",
+      "limit": 5,
+      "offset": 0
+    },
+    "direct_tool_name": "Emails__list_emails"
+  },
+  "source_repo": "meta-agents-research-environments/gaia2",
+  "split": "validation"
+}

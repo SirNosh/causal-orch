@@ -1,0 +1,1280 @@
+{
+  "attempts": 20,
+  "budget_exhaustions": 0,
+  "clean_first_attempt_acceptances": 20,
+  "condition": {
+    "budget": 2000,
+    "gaia2_loaded": false,
+    "gguf_sha256": "76627e550979d8ea5746cb11922ad10352d91546aa540c0e8292522f8dd9c2b5",
+    "interface_label": "NATIVE_TYPED_TOOL_INTERFACE",
+    "llama_cpp_commit": "d28da865bf284acaecc98ad18a3c1f607c0fd754",
+    "model": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+    "provider": "Nanbeige/llama.cpp",
+    "sampling": {
+      "max_tokens": 4096,
+      "temperature": 1.0,
+      "top_k": 20,
+      "top_p": 0.95
+    },
+    "synthetic_observation_sha256": "0c6cf5bede989156bc6e3f550f0829a73720185421a956b5f712873535c6ee15",
+    "thinking": true,
+    "validator": "EvidenceReport.from_dict + worker semantic validation"
+  },
+  "created_at": "2026-07-26T00:31:49.266622+00:00",
+  "malformed_argument_objects": 0,
+  "missing_fields": 0,
+  "model_manifest_sha256": "9d91aade4605bf8ed286b086b1f14d6aad7c450f103945dea886dbad119a6e79",
+  "provider_manifest_sha256": "8cd77edda03448e978c6771539c94964bb103b91465a9885dc47df76fd916942",
+  "qualified": true,
+  "repair_attempts_required": 0,
+  "results": [
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 1,
+      "budget_after": 1655,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 345,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "e226lfTANY9w8bDi943D0pGhe1zPoTpG",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 2,
+      "budget_after": 1686,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 314,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "pNY2J4JPlxnMCpztbH6gwAgDqSFEEJUD",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 3,
+      "budget_after": 1579,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 421,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "ttKNYmQ1WGcZOJCbtHzdrOFrVgcLYrNl",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 4,
+      "budget_after": 1700,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 300,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "Dxtl1yl82h0mRWoM8eCCcN3cJtqGfHea",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 5,
+      "budget_after": 1642,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 358,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "OYEt6MnRD8Wkjt97MLyFqzq13pt4vhn8",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 6,
+      "budget_after": 1577,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 423,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com, based on the single email in the fixed observation with timestamp 2026-07-25T13:00:00Z.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "None required; objective is complete.",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "isbTtsPcuKr1CXRq5vapoTydzy7gr1fZ",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com, based on the single email in the fixed observation with timestamp 2026-07-25T13:00:00Z.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "None required; objective is complete.",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 7,
+      "budget_after": 1469,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 531,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "No8JddmxGrHFfzXm7XHBjQe1ESLUUobp",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 8,
+      "budget_after": 1706,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 294,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "1iYFkd6hN9nz6Nc7rFph0lJLT3kuipC5",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 9,
+      "budget_after": 1560,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 440,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "gVIX1o8VLHAFNmHbiak0VCE4NfIWHBLQ",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 10,
+      "budget_after": 1691,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 309,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "x4SJIuMncmvHIg6qkLGET9tZaLiIqW6I",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 11,
+      "budget_after": 1497,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 503,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "bukGNSWJPf91t7PdfZ0OLExYWZotrNU3",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 12,
+      "budget_after": 1730,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 270,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "DMwF0XK2LoFCOHdt0ZtiF1CCLMywqBEy",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 13,
+      "budget_after": 1649,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 351,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "0fInkKqUk2TI9jK4jsrpqz02LEQwkgHU",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 14,
+      "budget_after": 1651,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 349,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "g2e2ozPKOk7n0bYWbVuzyYRuQxPgHCdd",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 15,
+      "budget_after": 1612,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 388,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "6o6bpTlNrMszaLgwRy39hl0JeZOmvAy7",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 16,
+      "budget_after": 1591,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 409,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "YzpFgvZk0bHkT7XhVi5CiaPP2siGtqBs",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 17,
+      "budget_after": 1607,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 393,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "S7ucd5layIs9wuyNTycXBAR37tlR0LVB",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 18,
+      "budget_after": 1634,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 366,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "iEA0KExICpQ2x2MBsDOzk3kFaqKwVGYt",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 19,
+      "budget_after": 1655,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 345,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "XnuNnKTtbsBeria6d11Rhxj0Ykp2Uj48",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    },
+    {
+      "action_name": "return_artifact",
+      "attempt_number": 20,
+      "budget_after": 1655,
+      "budget_before": 2000,
+      "budget_exhausted": false,
+      "completion_tokens": 345,
+      "error": null,
+      "malformed_argument_object": false,
+      "normalized_tool_call": {
+        "function": {
+          "arguments": {
+            "artifact_type": "EVIDENCE_REPORT",
+            "contradictions": [],
+            "findings": [
+              {
+                "claim": "The most recent email sender is alice@example.com.",
+                "confidence": "HIGH",
+                "evidence_refs": [
+                  "synthetic_observation:email:0"
+                ]
+              }
+            ],
+            "objective": "Identify the most recent email sender.",
+            "recommended_next_action": "null",
+            "status": "COMPLETE",
+            "uncertainties": []
+          },
+          "name": "return_artifact"
+        },
+        "id": "qIkiDvrX6JpF9jcNDETuU7X7jDZgLtzK",
+        "type": "function"
+      },
+      "parsed_as_action": true,
+      "phase": "POST_TOOL_ARTIFACT",
+      "reasoning_tokens": null,
+      "repair_attempts_required": 0,
+      "terminal_event": "MODEL_RESPONSE",
+      "validator_accepted": true,
+      "validator_input": {
+        "artifact_type": "EVIDENCE_REPORT",
+        "contradictions": [],
+        "findings": [
+          {
+            "claim": "The most recent email sender is alice@example.com.",
+            "confidence": "HIGH",
+            "evidence_refs": [
+              "synthetic_observation:email:0"
+            ]
+          }
+        ],
+        "objective": "Identify the most recent email sender.",
+        "recommended_next_action": "null",
+        "status": "COMPLETE",
+        "uncertainties": []
+      },
+      "validator_reached": true,
+      "validator_rejection_categories": []
+    }
+  ],
+  "schema_audit": {
+    "additional_properties_false": true,
+    "artifact_type_enum": [
+      "EVIDENCE_REPORT"
+    ],
+    "chat_template_caps": {
+      "supports_object_arguments": true,
+      "supports_parallel_tool_calls": true,
+      "supports_preserve_reasoning": true,
+      "supports_string_content": true,
+      "supports_system_role": true,
+      "supports_tool_calls": true,
+      "supports_tools": true,
+      "supports_typed_content": false
+    },
+    "chat_template_present": true,
+    "chat_template_sha256": "fc4b80d5079d4834192d6afce193bab68f79ec4551d79361ee39dcc663f6935f",
+    "confidence_enum": [
+      "LOW",
+      "MEDIUM",
+      "HIGH"
+    ],
+    "finding_additional_properties_false": true,
+    "finding_fields": [
+      "claim",
+      "evidence_refs",
+      "confidence"
+    ],
+    "interface_label": "NATIVE_TYPED_TOOL_INTERFACE",
+    "model_alias": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+    "model_ftype": "Q8_0",
+    "openai_tools_field_present": true,
+    "parameters_equal_canonical_schema": true,
+    "required_finding_fields": [
+      "claim",
+      "evidence_refs",
+      "confidence"
+    ],
+    "required_top_level_fields": [
+      "artifact_type",
+      "objective",
+      "status",
+      "findings",
+      "uncertainties",
+      "contradictions",
+      "recommended_next_action"
+    ],
+    "return_artifact_native_schema_present": true,
+    "server_build_info": "b10042-d28da865b",
+    "status_enum": [
+      "COMPLETE",
+      "PARTIAL",
+      "BLOCKED"
+    ],
+    "tool_call_id_replay": "NOT_APPLICABLE_ARTIFACT_ONLY_SINGLE_TURN",
+    "tool_choice": "auto",
+    "tool_schema_sha256": "400cad090d99cf0335031cf2fb06e78e9a08b2415147794f14d7a9cfd9b68f6d",
+    "top_level_fields": [
+      "artifact_type",
+      "objective",
+      "status",
+      "findings",
+      "uncertainties",
+      "contradictions",
+      "recommended_next_action"
+    ]
+  },
+  "unknown_fields": 0
+}

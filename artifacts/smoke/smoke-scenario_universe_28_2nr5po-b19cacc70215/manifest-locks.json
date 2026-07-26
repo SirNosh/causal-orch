@@ -1,0 +1,10 @@
+{
+  "are_commit": "7946367413129784139e785ae4c351090002a0bb",
+  "gaia2_dataset_sha256": "24a56de2ca5bd70ea3280b8e4f8425af87f2177ef2cfd14c3897eb77fe13be54",
+  "gaia2_manifest_sha256": "4ee83a305cbf8fb65dad4f40120181e5ada3676a008d56d3e66bda085a211e0a",
+  "gaia2_revision": "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99",
+  "model_manifest_sha256": "bd993231c17d291fe5a36911d9c1912e6a39b8199a51803fc9e5194df02d191e",
+  "provider_manifest_sha256": "36a50ce44682077b950940317218e654f3aff2f7bbb7f5fd208f9a7fe9ace510",
+  "scenario_id": "scenario_universe_28_2nr5po",
+  "scenario_sha256": "1b9d6d63fafbf554d275abc3f4667c8c231fd18a68ac3526f19c869f3773e09b"
+}

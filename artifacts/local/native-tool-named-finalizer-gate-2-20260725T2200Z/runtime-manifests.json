@@ -1,0 +1,51 @@
+{
+  "gaia2_manifest_sha256": "354d5498bfbd22c380d6e79eec2ecaab7878b3c9bbcba5d3fee488baca5641fa",
+  "gaia2_revision": "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99",
+  "model_manifest": {
+    "context_length": 32768,
+    "cuda_version": "13.0.48",
+    "driver_version": "595.97",
+    "gguf_filename": "Nanbeige4.2-3B-Q8_0.gguf",
+    "gguf_repository": "Abiray/Nanbeige4.2-3B-GGUF",
+    "gguf_revision": "774a61f8217ad18e7e102107fb7abcfecfae6a99",
+    "gguf_sha256": "76627e550979d8ea5746cb11922ad10352d91546aa540c0e8292522f8dd9c2b5",
+    "gguf_size_bytes": 4434787248,
+    "gpu_name": "NVIDIA GeForce RTX 4070 SUPER",
+    "jinja": true,
+    "kv_cache_type_k": "q8_0",
+    "kv_cache_type_v": "q8_0",
+    "llama_cpp_branch": "nanbeige42",
+    "llama_cpp_commit": "d28da865bf284acaecc98ad18a3c1f607c0fd754",
+    "llama_cpp_repository": "https://github.com/Nanbeige/llama.cpp",
+    "manifest_sha256": "9d91aade4605bf8ed286b086b1f14d6aad7c450f103945dea886dbad119a6e79",
+    "original_model_slug": "Nanbeige/Nanbeige4.2-3B",
+    "preserve_thinking": true,
+    "quantization": "Q8_0",
+    "requested_model_slug": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+    "sampling": {
+      "max_tokens": 4096,
+      "temperature": 1.0,
+      "top_k": 20,
+      "top_p": 0.95
+    },
+    "selected_provider": "Nanbeige/llama.cpp",
+    "server_binary_sha256": "ffd50a1818124aec857b9bedee3dadcf905548f7fc83a9c06dcdaa281d8effab",
+    "snapshot_timestamp_utc": "2026-07-25T21:50:00Z",
+    "tool_call_format": "xml"
+  },
+  "provider_manifest": {
+    "branch": "nanbeige42",
+    "build_number": 10042,
+    "commit": "d28da865bf284acaecc98ad18a3c1f607c0fd754",
+    "compiler": "MSVC 19.41.34120.0",
+    "cuda_version": "13.0.48",
+    "data_policy": "local_only_no_provider_collection",
+    "execution": "local_loopback",
+    "provider_name": "Nanbeige/llama.cpp",
+    "provider_slug": "nanbeige-llama-cpp-local",
+    "repository": "https://github.com/Nanbeige/llama.cpp",
+    "server_binary_sha256": "ffd50a1818124aec857b9bedee3dadcf905548f7fc83a9c06dcdaa281d8effab"
+  },
+  "provider_manifest_sha256": "8cd77edda03448e978c6771539c94964bb103b91465a9885dc47df76fd916942",
+  "scenario_sha256": "1b9d6d63fafbf554d275abc3f4667c8c231fd18a68ac3526f19c869f3773e09b"
+}

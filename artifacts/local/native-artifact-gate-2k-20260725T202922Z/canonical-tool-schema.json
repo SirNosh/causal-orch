@@ -1,0 +1,88 @@
+{
+  "function": {
+    "description": "Return the final structured evidence report and end the worker.",
+    "name": "return_artifact",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_type": {
+          "enum": [
+            "EVIDENCE_REPORT"
+          ],
+          "type": "string"
+        },
+        "contradictions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "claim": {
+                "type": "string"
+              },
+              "confidence": {
+                "enum": [
+                  "LOW",
+                  "MEDIUM",
+                  "HIGH"
+                ],
+                "type": "string"
+              },
+              "evidence_refs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "claim",
+              "evidence_refs",
+              "confidence"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "recommended_next_action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "COMPLETE",
+            "PARTIAL",
+            "BLOCKED"
+          ],
+          "type": "string"
+        },
+        "uncertainties": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "artifact_type",
+        "objective",
+        "status",
+        "findings",
+        "uncertainties",
+        "contradictions",
+        "recommended_next_action"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

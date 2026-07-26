@@ -1,0 +1,12 @@
+{
+  "completed": true,
+  "result": {
+    "duration": null,
+    "exception": null,
+    "export_path": null,
+    "rationale": "Failure: Agent did not perform the following oracle tool call:\ntool name: AgentUserInterface__send_message_to_user\ntool args:\n-content: 44\n\nList of matching attempts:\n-Failure matching agent event (ID: Event-USER-8703ace6-a4b0-4771-8771-30fbfe4d18fa) with oracle event (ID: OracleEvent-AGENT-ace7df37-87cc-44d1-83d1-1ad5e1fdd550), reason: already matched\n-Failure matching agent event (ID: AGENT-AgentUserInterface.send_message_to_user-6a323455-783f-4fab-9cfc-df633ffb5305) with oracle event (ID: OracleEvent-AGENT-ace7df37-87cc-44d1-83d1-1ad5e1fdd550), reason: tool judge reject",
+    "success": false
+  },
+  "success": false,
+  "validator": "GraphPerEventJudge"
+}
