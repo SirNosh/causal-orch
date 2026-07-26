@@ -263,6 +263,12 @@ class LocalLlamaLLMEngine(LLMEngine):
                 and "exceeds the available context size" in json.dumps(error_body)
             ):
                 error_type = "CONTEXT_LENGTH_EXCEEDED"
+            error_text = json.dumps(error_body)
+            if (
+                "Failed to initialize samplers" in error_text
+                and "grammar" in error_text.lower()
+            ):
+                error_type = "LLAMA_CPP_GRAMMAR_SAMPLER_INIT_FAILURE"
             raise LocalLlamaProtocolError(
                 "local llama-server request failed",
                 error_type=error_type,
@@ -502,11 +508,18 @@ class LocalLlamaLLMEngine(LLMEngine):
         max_tokens: int | None = None,
         additional_trace_tags: Any = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        interface_label = (
-            "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED"
-            if tool_choice == "required"
-            else "NATIVE_TYPED_TOOL_INTERFACE_AUTO"
-        )
+        if tool_choice == "required":
+            interface_label = "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED"
+        elif isinstance(tool_choice, Mapping):
+            function = tool_choice.get("function")
+            name = function.get("name") if isinstance(function, Mapping) else None
+            interface_label = (
+                "NATIVE_TYPED_TOOL_INTERFACE_NAMED_FINALIZER"
+                if name == "return_artifact"
+                else "NATIVE_TYPED_TOOL_INTERFACE_NAMED"
+            )
+        else:
+            interface_label = "NATIVE_TYPED_TOOL_INTERFACE_AUTO"
         correlation_id = self.correlation_id_factory()
         started = time.monotonic()
         trace_tags = _normalize_trace_tags(additional_trace_tags)

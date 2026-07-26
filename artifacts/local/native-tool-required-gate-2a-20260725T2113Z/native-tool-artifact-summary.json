@@ -1,5 +1,13 @@
 {
   "attempts": 5,
+  "gate": "GATE_2A_REQUIRED_TOOL_CHOICE",
+  "gate_status": "NOT_EVALUABLE",
+  "qualification_pass": null,
+  "runtime_compatibility": false,
+  "model_capability_evaluated": false,
+  "generation_attempts_reached": 0,
+  "runtime_failure_type": "GRAMMAR_SAMPLER_INITIALIZATION_FAILURE",
+  "model_call_failure_type": "LLAMA_CPP_GRAMMAR_SAMPLER_INIT_FAILURE",
   "condition": {
     "format_retry": false,
     "interface_label": "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED",
@@ -14,7 +22,7 @@
   },
   "created_at": "2026-07-26T01:13:21.493871+00:00",
   "passes": 0,
-  "qualified": false,
+  "qualified": null,
   "results": [
     {
       "artifact": null,

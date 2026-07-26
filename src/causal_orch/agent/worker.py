@@ -41,6 +41,9 @@ from .schemas import MAX_WORKER_OUTPUT_TOKENS, MAX_WORKER_STEPS
 STOCK_ARE_REACT_JSON = "STOCK_ARE_REACT_JSON"
 NATIVE_TYPED_TOOL_INTERFACE_AUTO = "NATIVE_TYPED_TOOL_INTERFACE_AUTO"
 NATIVE_TYPED_TOOL_INTERFACE_REQUIRED = "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED"
+NATIVE_TYPED_TOOL_INTERFACE_NAMED_FINALIZER = (
+    "NATIVE_TYPED_TOOL_INTERFACE_NAMED_FINALIZER"
+)
 
 
 class TreatmentFailureReason(str, Enum):
@@ -652,6 +655,7 @@ class NativeTypedWorkerRunner:
             },
         ]
         read_tool_used = False
+        named_finalizer = False
         for _step in range(budgets.max_steps):
             budget_before = max(
                 0, budgets.max_output_tokens - budget_state.output_tokens_used
@@ -669,8 +673,19 @@ class NativeTypedWorkerRunner:
             try:
                 assistant, metadata = self.engine.native_tool_completion(
                     messages,
-                    tools=native_tools,
-                    tool_choice="required",
+                    tools=(
+                        [native_tools[-1]]
+                        if named_finalizer
+                        else native_tools
+                    ),
+                    tool_choice=(
+                        {
+                            "type": "function",
+                            "function": {"name": "return_artifact"},
+                        }
+                        if named_finalizer
+                        else "auto"
+                    ),
                     max_tokens=budget_before,
                     additional_trace_tags={"actor_role": "worker"},
                 )
@@ -680,7 +695,13 @@ class NativeTypedWorkerRunner:
             exchange = self._exchange(metadata)
             if exchange is not None:
                 exchange["phase"] = (
-                    "POST_TOOL_ARTIFACT" if read_tool_used or not tools else "PRE_TOOL"
+                    "FORMAT_ONLY_FINALIZER"
+                    if named_finalizer
+                    else (
+                        "POST_TOOL_ARTIFACT"
+                        if read_tool_used or not tools
+                        else "PRE_TOOL"
+                    )
                 )
                 exchange["budget_before"] = budget_before
             try:
@@ -711,10 +732,15 @@ class NativeTypedWorkerRunner:
                             budget_state.output_tokens_used,
                         )
                     )
+                no_call = not isinstance(calls, list) or not calls
                 violation = (
-                    "PROTOCOL_VIOLATION_NO_TOOL_CALL"
-                    if not isinstance(calls, list) or not calls
-                    else "PROTOCOL_VIOLATION_MULTIPLE_TOOL_CALLS"
+                    "PROTOCOL_VIOLATION_PLAIN_TEXT"
+                    if no_call and read_tool_used
+                    else (
+                        "PROTOCOL_VIOLATION_NO_TOOL_CALL"
+                        if no_call
+                        else "PROTOCOL_VIOLATION_MULTIPLE_TOOL_CALLS"
+                    )
                 )
                 if exchange is not None:
                     exchange["output_rejection"] = violation
@@ -729,6 +755,20 @@ class NativeTypedWorkerRunner:
                             payload={"reason": violation},
                         )
                     )
+                if no_call and read_tool_used and not named_finalizer:
+                    messages.append(dict(assistant))
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Your previous response was not a valid worker "
+                                "action. Return the final EvidenceReport using "
+                                "the available function."
+                            ),
+                        }
+                    )
+                    named_finalizer = True
+                    continue
                 error = ValidationError(
                     "native worker must emit exactly one tool call"
                 )
@@ -771,6 +811,10 @@ class NativeTypedWorkerRunner:
             tool = tool_map.get(name)
             if tool is None:
                 raise ValidationError(f"native worker called unknown tool: {name}")
+            if named_finalizer:
+                raise ValidationError(
+                    "named finalizer called a non-artifact tool"
+                )
             result = tool(**arguments)
             read_tool_used = True
             messages.append(

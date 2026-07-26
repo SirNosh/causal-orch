@@ -112,6 +112,39 @@ class LocalLlamaEngineTests(unittest.TestCase):
         self.assertEqual(len(terminals), 1)
         self.assertEqual(terminals[0].error_type, "MODEL_IDENTITY_MISMATCH")
 
+    def test_classifies_llama_grammar_sampler_initialization_failure(self):
+        transport = FakeTransport(
+            HTTPResponse(
+                400,
+                {
+                    "error": {
+                        "message": (
+                            "Failed to initialize samplers: Unexpected empty "
+                            "grammar stack after accepting piece"
+                        )
+                    }
+                },
+            )
+        )
+        sink = InMemoryTraceSink()
+        with tempfile.TemporaryDirectory() as directory:
+            engine = self.engine(directory, transport, sink)
+            with self.assertRaises(LocalLlamaProtocolError) as raised:
+                engine.native_tool_completion(
+                    [{"role": "user", "content": "Call the tool."}],
+                    tools=[native_return_artifact_tool_schema()],
+                    tool_choice="required",
+                )
+
+        self.assertEqual(
+            raised.exception.error_type,
+            "LLAMA_CPP_GRAMMAR_SAMPLER_INIT_FAILURE",
+        )
+        self.assertEqual(
+            sink.events[-1].error_type,
+            "LLAMA_CPP_GRAMMAR_SAMPLER_INIT_FAILURE",
+        )
+
     def test_native_tool_request_normalizes_string_arguments_and_preserves_exchange(self):
         tool = native_return_artifact_tool_schema()
         arguments = {

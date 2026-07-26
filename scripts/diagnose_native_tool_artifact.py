@@ -1,4 +1,4 @@
-"""Run worker-only required-tool plus native-artifact Gaia2 probes."""
+"""Run worker-only named-finalizer plus native-artifact Gaia2 probes."""
 
 from __future__ import annotations
 
@@ -197,6 +197,14 @@ def run_gate(
         plain_text_responses = sum(
             not _exchange_tool_calls(exchange) for exchange in exchanges
         )
+        named_finalizer_attempts = sum(
+            exchange.get("phase") == "FORMAT_ONLY_FINALIZER"
+            for exchange in exchanges
+        )
+        malformed_artifacts = sum(
+            not bool((_event_value(event, "payload", {}) or {}).get("accepted"))
+            for event in artifact_validations
+        )
         repair_attempts = sum(
             exchange.get("phase") == "ARTIFACT_REPAIR"
             for exchange in exchanges
@@ -204,13 +212,37 @@ def run_gate(
         exact_id_replay = (
             _exact_tool_result_replay(exchanges) if environment_calls else None
         )
-        required_every_request = bool(requests) and (
-            not exchanges
-            or all(
-                isinstance(exchange.get("outgoing_request"), Mapping)
-                and exchange["outgoing_request"].get("tool_choice") == "required"
-                for exchange in exchanges
+        tool_choice_policy_valid = bool(exchanges) and all(
+            isinstance(exchange.get("outgoing_request"), Mapping)
+            and (
+                (
+                    exchange.get("phase") == "FORMAT_ONLY_FINALIZER"
+                    and exchange["outgoing_request"].get("tool_choice")
+                    == {
+                        "type": "function",
+                        "function": {"name": "return_artifact"},
+                    }
+                    and [
+                        tool["function"]["name"]
+                        for tool in exchange["outgoing_request"].get("tools", [])
+                    ]
+                    == ["return_artifact"]
+                )
+                or (
+                    exchange.get("phase") != "FORMAT_ONLY_FINALIZER"
+                    and exchange["outgoing_request"].get("tool_choice") == "auto"
+                )
             )
+            for exchange in exchanges
+        )
+        failure_types = [
+            _event_value(event, "error_type")
+            for event in terminals
+            if _event_name(event) == "MODEL_CALL_FAILED"
+        ]
+        unclassified_failures = sum(
+            failure_type in {None, "ENGINE_PROTOCOL_ERROR", "HTTP_NON_RETRIABLE"}
+            for failure_type in failure_types
         )
         artifact_completion_tokens = next(
             (
@@ -239,9 +271,12 @@ def run_gate(
                 not budget_exhausted,
                 not state_violation,
                 exact_id_replay,
-                required_every_request,
-                plain_text_responses == 0,
+                tool_choice_policy_valid,
+                plain_text_responses == named_finalizer_attempts,
+                named_finalizer_attempts <= 1,
+                malformed_artifacts == 0,
                 repair_attempts == 0,
+                unclassified_failures == 0,
             )
         )
         attempt_dir = output_dir / f"attempt-{attempt_number:02d}"
@@ -273,9 +308,11 @@ def run_gate(
             "model_identity_verified": model_verified,
             "provider_identity_verified": provider_verified,
             "state_write_violation": state_violation,
-            "tool_choice_required_every_request": required_every_request,
+            "tool_choice_policy_valid": tool_choice_policy_valid,
             "exact_tool_call_id_replay": exact_id_replay,
             "plain_text_worker_responses": plain_text_responses,
+            "named_finalizer_attempts": named_finalizer_attempts,
+            "malformed_artifacts": malformed_artifacts,
             "repair_attempts": repair_attempts,
             "first_selected_tool": tool_names[0] if tool_names else None,
             "environment_tool_calls": len(environment_calls),
@@ -284,11 +321,8 @@ def run_gate(
             "artifact_completion_tokens": artifact_completion_tokens,
             "cumulative_generated_tokens": cumulative_generated_tokens,
             "model_requests": len(requests),
-            "model_call_failure_types": [
-                _event_value(event, "error_type")
-                for event in terminals
-                if _event_name(event) == "MODEL_CALL_FAILED"
-            ],
+            "model_call_failure_types": failure_types,
+            "unclassified_failures": unclassified_failures,
             "native_exchanges": len(exchanges),
             "artifact": artifact,
         }
@@ -312,12 +346,17 @@ def run_gate(
         )
     report = {
         "condition": {
-            "interface_label": "NATIVE_TYPED_TOOL_INTERFACE_REQUIRED",
+            "interface_label": "NATIVE_TYPED_TOOL_INTERFACE_NAMED_FINALIZER",
             "scenario_id": "scenario_universe_28_2nr5po",
             "orchestrator_present": False,
-            "tool_choice": "required",
+            "evidence_gathering_tool_choice": "auto",
+            "post_plain_text_tool_choice": {
+                "type": "function",
+                "function": {"name": "return_artifact"},
+            },
             "parallel_tool_calls": False,
-            "format_retry": False,
+            "max_named_finalizer_attempts": 1,
+            "semantic_repair": False,
             "worker_budget": {
                 "max_steps": 8,
                 "max_output_tokens": 2000,

@@ -1,0 +1,15 @@
+common_sampler_init: prefill token: 166100 = <|im_start|>
+common_sampler_init: prefill token: 13886 =  assistant
+common_sampler_init: prefill token: 13 = \n
+common_sampler_init: prefill token: 166103 = <think>
+common_sampler_init: prefill token: 152343 = <space>
+common_sampler_init: prefill token: 13 = \n
+common_sampler_init: grammar accepted prefill token (166100)
+common_sampler_init: error initializing grammar sampler
+
+Generation prompt:
+'<|im_start|>assistant
+<think>
+'
+
+send_error: Failed to initialize samplers: Unexpected empty grammar stack after accepting piece:  assistant (13886)

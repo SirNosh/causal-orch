@@ -188,13 +188,34 @@ class WorkerReadOnlyTests(unittest.TestCase):
                             "arguments": {"path": "record"},
                         },
                     }
-                else:
+                elif index == 1:
                     self.test_case.assertEqual(messages[-2]["role"], "assistant")
                     self.test_case.assertEqual(messages[-1]["role"], "tool")
                     self.test_case.assertEqual(
                         messages[-1]["tool_call_id"], "read-call"
                     )
-                    self.test_case.assertEqual(kwargs["max_tokens"], 1950)
+                    return (
+                        {
+                            "role": "assistant",
+                            "content": "The record exists.",
+                            "tool_calls": [],
+                        },
+                        {
+                            "completion_tokens": 50,
+                            "native_exchange_index": index,
+                        },
+                    )
+                else:
+                    self.test_case.assertEqual(messages[-1]["role"], "user")
+                    self.test_case.assertEqual(
+                        kwargs["tool_choice"]["function"]["name"],
+                        "return_artifact",
+                    )
+                    self.test_case.assertEqual(kwargs["max_tokens"], 1900)
+                    self.test_case.assertEqual(
+                        [tool["function"]["name"] for tool in tools],
+                        ["return_artifact"],
+                    )
                     call = {
                         "id": "artifact-call",
                         "type": "function",
@@ -235,11 +256,14 @@ class WorkerReadOnlyTests(unittest.TestCase):
             [tool["function"]["name"] for tool in engine.calls[0][1]],
             ["FileSystem__read_file", "return_artifact"],
         )
-        self.assertTrue(
-            all(call[2]["tool_choice"] == "required" for call in engine.calls)
+        self.assertEqual(engine.calls[0][2]["tool_choice"], "auto")
+        self.assertEqual(engine.calls[1][2]["tool_choice"], "auto")
+        self.assertEqual(
+            engine.native_exchanges[2]["validator_result"]["accepted"], True
         )
         self.assertEqual(
-            engine.native_exchanges[1]["validator_result"]["accepted"], True
+            engine.native_exchanges[1]["output_rejection"],
+            "PROTOCOL_VIOLATION_PLAIN_TEXT",
         )
         self.assertEqual(sink.events[-1].event_type, EventName.ARTIFACT_VALIDATION)
 

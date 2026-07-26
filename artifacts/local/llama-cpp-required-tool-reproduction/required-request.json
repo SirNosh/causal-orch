@@ -1,0 +1,28 @@
+{
+  "model": "Abiray/Nanbeige4.2-3B-GGUF:Q8_0",
+  "messages": [{"role": "user", "content": "Call ping with the value ok."}],
+  "tools": [{
+    "type": "function",
+    "function": {
+      "name": "ping",
+      "parameters": {
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+        "additionalProperties": false
+      }
+    }
+  }],
+  "tool_choice": "required",
+  "parallel_tool_calls": false,
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "max_tokens": 64,
+  "stream": false,
+  "chat_template_kwargs": {
+    "enable_thinking": true,
+    "preserve_thinking": true,
+    "tool_call_format": "xml"
+  }
+}
