@@ -1,3 +1,12 @@
-"""Small, deterministic primitives for the causal-orch protocol."""
+"""Minimal causal delegation experiment kernel."""
 
-__version__ = "0.1.0"
+from .actions import DelegateAction, FinalAction, ToolAction
+from .experiment import RunOutcome, run_one
+
+__all__ = [
+    "DelegateAction",
+    "FinalAction",
+    "RunOutcome",
+    "ToolAction",
+    "run_one",
+]

@@ -119,35 +119,19 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "meta-agents-research-environments" },
-    { name = "pyyaml" },
 ]
 
 [package.optional-dependencies]
-gui = [
-    { name = "fastapi" },
-    { name = "pypdf" },
-    { name = "starlette" },
-    { name = "strawberry-graphql" },
-    { name = "uvicorn" },
-    { name = "wsproto" },
-]
 test = [
     { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", marker = "extra == 'gui'", specifier = "==0.116.1" },
     { name = "meta-agents-research-environments", git = "https://github.com/facebookresearch/meta-agents-research-environments.git?rev=7946367413129784139e785ae4c351090002a0bb" },
-    { name = "pypdf", marker = "extra == 'gui'", specifier = "==6.0.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = "==8.3.4" },
-    { name = "pyyaml", specifier = "==6.0.2" },
-    { name = "starlette", marker = "extra == 'gui'", specifier = "==0.47.2" },
-    { name = "strawberry-graphql", marker = "extra == 'gui'", specifier = "==0.275.5" },
-    { name = "uvicorn", marker = "extra == 'gui'", specifier = "==0.35.0" },
-    { name = "wsproto", marker = "extra == 'gui'", specifier = "==1.2.0" },
 ]
-provides-extras = ["test", "gui"]
+provides-extras = ["test"]
 
 [[package]]
 name = "certifi"
@@ -329,20 +313,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fastapi"
-version = "0.116.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "starlette" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/78/d7/6c8b3bfe33eeffa208183ec037fee0cce9f7f024089ab1c5d12ef04bd27c/fastapi-0.116.1.tar.gz", hash = "sha256:ed52cbf946abfd70c5a0dccb24673f0670deeb517a88b3544d03c2a6bf283143", size = 296485, upload-time = "2025-07-11T16:22:32.057Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/47/d63c60f59a59467fda0f93f46335c9d18526d7071f025cb5b89d5353ea42/fastapi-0.116.1-py3-none-any.whl", hash = "sha256:c46ac7c312df840f0c9e220f7964bada936781bc4e2e6eb71f1c4d7553786565", size = 95631, upload-time = "2025-07-11T16:22:30.485Z" },
-]
-
-[[package]]
 name = "filelock"
 version = "3.32.0"
 source = { registry = "https://pypi.org/simple" }
@@ -388,15 +358,6 @@ wheels = [
 [package.optional-dependencies]
 http = [
     { name = "aiohttp" },
-]
-
-[[package]]
-name = "graphql-core"
-version = "3.2.11"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/4d/90/f2aff026ab4aebd80eb71905106a0885f4cfde85dcf965543f45bed0d9ee/graphql_core-3.2.11.tar.gz", hash = "sha256:e7e156d10beb127cab5c89ff0da71416fc73d27c484a4757d3b2d35633774802", size = 528407, upload-time = "2026-06-05T13:45:22.915Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/00/15/b92b4e1d88d02c6eff9733c9eea21846ab435cc4d813d84ccc5d335955df/graphql_core-3.2.11-py3-none-any.whl", hash = "sha256:0b3e35ff41e9adba53021ab0cef475eb18f57c7f53f0f2ca55567fbf3c537ea0", size = 214879, upload-time = "2026-06-05T13:45:21.245Z" },
 ]
 
 [[package]]
@@ -1057,15 +1018,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pypdf"
-version = "6.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/20/ac/a300a03c3b34967c050677ccb16e7a4b65607ee5df9d51e8b6d713de4098/pypdf-6.0.0.tar.gz", hash = "sha256:282a99d2cc94a84a3a3159f0d9358c0af53f85b4d28d76ea38b96e9e5ac2a08d", size = 5033827, upload-time = "2025-08-11T14:22:02.352Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/83/2cacc506eb322bb31b747bc06ccb82cc9aa03e19ee9c1245e538e49d52be/pypdf-6.0.0-py3-none-any.whl", hash = "sha256:56ea60100ce9f11fc3eec4f359da15e9aec3821b036c1f06d2b660d35683abb8", size = 310465, upload-time = "2025-08-11T14:22:00.481Z" },
-]
-
-[[package]]
 name = "pytest"
 version = "8.3.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1347,21 +1299,6 @@ wheels = [
 ]
 
 [[package]]
-name = "strawberry-graphql"
-version = "0.275.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "graphql-core" },
-    { name = "packaging" },
-    { name = "python-dateutil" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/67/52/8a317305bb3e484c4850befefe655069c51ff8a9fa7b30e96f6fd68e6203/strawberry_graphql-0.275.5.tar.gz", hash = "sha256:080518de70b82c04a1f2d6118f268fadde45b985821e20e1550e3281afdecc41", size = 209640, upload-time = "2025-06-26T22:38:51.863Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/1c/6b9727656968e6460fd22cdaedd1e309e26fa313053ed9bbdf1aee45082b/strawberry_graphql-0.275.5-py3-none-any.whl", hash = "sha256:b1d2c7c6febb5f8bd5bc9f3059d23f527f61f7a9fb6f7f24f4c5a7771dba7050", size = 306274, upload-time = "2025-06-26T22:38:49.05Z" },
-]
-
-[[package]]
 name = "termcolor"
 version = "2.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1493,18 +1430,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5e/42/e0e305207bb88c6b8d3061399c6a961ffe5fbb7e2aa63c9234df7259e9cd/uvicorn-0.35.0.tar.gz", hash = "sha256:bc662f087f7cf2ce11a1d7fd70b90c9f98ef2e2831556dd078d131b96cc94a01", size = 78473, upload-time = "2025-06-28T16:15:46.058Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/e2/dc81b1bd1dcfe91735810265e9d26bc8ec5da45b4c0f6237e286819194c3/uvicorn-0.35.0-py3-none-any.whl", hash = "sha256:197535216b25ff9b785e29a0b79199f55222193d47f820816e7da751e9bc8d4a", size = 66406, upload-time = "2025-06-28T16:15:44.816Z" },
-]
-
-[[package]]
-name = "wsproto"
-version = "1.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "h11" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c9/4a/44d3c295350d776427904d73c189e10aeae66d7f555bb2feee16d1e4ba5a/wsproto-1.2.0.tar.gz", hash = "sha256:ad565f26ecb92588a3e43bc3d96164de84cd9902482b130d0ddbaa9664a85065", size = 53425, upload-time = "2022-08-23T19:58:21.447Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/78/58/e860788190eba3bcce367f74d29c4675466ce8dddfba85f7827588416f01/wsproto-1.2.0-py3-none-any.whl", hash = "sha256:b9acddd652b585d75b20477888c56642fdade28bdfd3579aa24a4d2c037dd736", size = 24226, upload-time = "2022-08-23T19:58:19.96Z" },
 ]
 
 [[package]]
