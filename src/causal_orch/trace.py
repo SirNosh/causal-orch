@@ -32,11 +32,13 @@ class Trace:
         *,
         scenario_id: str | None = None,
         attempt_id: str = "1",
+        assignment_unit_id: str | None = None,
     ) -> None:
         self.run_id = run_id
         self.path = Path(path) if path is not None else None
         self.scenario_id = scenario_id
         self.attempt_id = attempt_id
+        self.assignment_unit_id = assignment_unit_id
         self.events: list[dict[str, Any]] = []
 
     def emit(self, event: str, **payload: Any) -> dict[str, Any]:
@@ -48,6 +50,7 @@ class Trace:
             "run_id": self.run_id,
             "scenario_id": self.scenario_id,
             "attempt_id": self.attempt_id,
+            "assignment_unit_id": self.assignment_unit_id,
             "event": event,
             "event_type": event,
             "payload": _json_safe(payload),

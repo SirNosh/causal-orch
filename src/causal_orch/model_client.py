@@ -10,7 +10,9 @@ from urllib import error, request
 
 
 class StructuredActionError(RuntimeError):
-    pass
+    def __init__(self, message: str, raw_response: Any = None) -> None:
+        self.raw_response = raw_response
+        super().__init__(message)
 
 
 class ModelHTTPError(RuntimeError):
@@ -39,6 +41,8 @@ class ModelClient(Protocol):
         self,
         messages: Sequence[Mapping[str, Any]],
         tools: Sequence[Mapping[str, Any]],
+        *,
+        max_tokens: int | None = None,
     ) -> ModelTurn: ...
 
 
@@ -62,6 +66,8 @@ class OpenAICompatibleClient:
         self,
         messages: Sequence[Mapping[str, Any]],
         tools: Sequence[Mapping[str, Any]],
+        *,
+        max_tokens: int | None = None,
     ) -> ModelTurn:
         payload = {
             "model": self.model,
@@ -71,6 +77,10 @@ class OpenAICompatibleClient:
             "parallel_tool_calls": False,
             "temperature": 0,
         }
+        if max_tokens is not None:
+            if max_tokens <= 0:
+                raise ValueError("max_tokens must be positive")
+            payload["max_tokens"] = max_tokens
         encoded = json.dumps(payload).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -100,7 +110,8 @@ class OpenAICompatibleClient:
             calls = message["tool_calls"]
             if len(calls) != 1:
                 raise StructuredActionError(
-                    f"expected exactly one tool call, received {len(calls)}"
+                    f"expected exactly one tool call, received {len(calls)}",
+                    raw,
                 )
             call = calls[0]
             function = call["function"]
@@ -115,7 +126,8 @@ class OpenAICompatibleClient:
                 raise TypeError("tool name and call id must be strings")
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise StructuredActionError(
-                "provider response did not contain one valid native function call"
+                "provider response did not contain one valid native function call",
+                raw,
             ) from exc
         usage = raw.get("usage") or {}
         return ModelTurn(
@@ -142,14 +154,20 @@ class ScriptedModelClient:
     def __init__(self, calls: Sequence[tuple[str, Mapping[str, Any]]]) -> None:
         self._calls = list(calls)
         self.call_count = 0
+        self.max_tokens_seen: list[int | None] = []
+        self.messages_seen: list[list[Mapping[str, Any]]] = []
 
     def complete(
         self,
         messages: Sequence[Mapping[str, Any]],
         tools: Sequence[Mapping[str, Any]],
+        *,
+        max_tokens: int | None = None,
     ) -> ModelTurn:
         if not self._calls:
             raise AssertionError("scripted model exhausted")
+        self.max_tokens_seen.append(max_tokens)
+        self.messages_seen.append([dict(message) for message in messages])
         name, arguments = self._calls.pop(0)
         call_id = f"call-{self.call_count}"
         self.call_count += 1

@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from .actions import Notification, NotificationType
+
 
 def _safe(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -168,6 +170,7 @@ class Gaia2Adapter:
         self._read_tools: dict[str, Any] = {}
         self._references = 0
         self._started = False
+        self._initial_user_message_consumed = False
 
     @staticmethod
     def _extract_task(data: Mapping[str, Any]) -> str:
@@ -228,7 +231,31 @@ class Gaia2Adapter:
     ) -> tuple[str, str]:
         return self._execute(self._read_tools, name, arguments)
 
-    def notifications(self) -> Sequence[str]:
+    def pause_time(self) -> None:
+        from are.simulation.types import EnvironmentState
+
+        if self.environment.state is not EnvironmentState.RUNNING:
+            raise RuntimeError(
+                f"cannot pause Gaia2 environment in state "
+                f"{self.environment.state}"
+            )
+        self.environment.pause()
+        if self.environment.state is not EnvironmentState.PAUSED:
+            raise RuntimeError("Gaia2 environment did not pause")
+
+    def resume_time(self, fixed_offset_seconds: float) -> None:
+        from are.simulation.types import EnvironmentState
+
+        if fixed_offset_seconds < 0:
+            raise ValueError("fixed model-time offset cannot be negative")
+        if self.environment.state is not EnvironmentState.PAUSED:
+            raise RuntimeError(
+                f"cannot resume Gaia2 environment in state "
+                f"{self.environment.state}"
+            )
+        self.environment.resume_with_offset(fixed_offset_seconds)
+
+    def notifications(self) -> Sequence[Notification]:
         from datetime import datetime, timezone
         from are.simulation.notification_system import MessageType
 
@@ -237,11 +264,29 @@ class Gaia2Adapter:
                 self.environment.time_manager.time(), tz=timezone.utc
             )
         )
-        return [
-            message.message
-            for message in messages
-            if message.message_type is MessageType.ENVIRONMENT_NOTIFICATION
-        ]
+        type_map = {
+            MessageType.USER_MESSAGE: NotificationType.USER_MESSAGE,
+            MessageType.ENVIRONMENT_NOTIFICATION: (
+                NotificationType.ENVIRONMENT_NOTIFICATION
+            ),
+            MessageType.ENVIRONMENT_STOP: NotificationType.ENVIRONMENT_STOP,
+        }
+        result = []
+        for message in messages:
+            if (
+                message.message_type is MessageType.USER_MESSAGE
+                and not self._initial_user_message_consumed
+                and message.message == self.task
+            ):
+                self._initial_user_message_consumed = True
+                continue
+            result.append(
+                Notification(
+                    type=type_map[message.message_type],
+                    content=message.message,
+                )
+            )
+        return result
 
     def finish(self, answer: str) -> None:
         name = "AgentUserInterface__send_message_to_user"

@@ -18,6 +18,10 @@ class WorkerWorld(Protocol):
 
     def state_hash(self) -> str: ...
 
+    def pause_time(self) -> None: ...
+
+    def resume_time(self, fixed_offset_seconds: float) -> None: ...
+
 
 @dataclass(frozen=True)
 class WorkerResult:
@@ -61,12 +65,14 @@ class ReadOnlyWorker:
         trace: Trace,
         max_steps: int = 6,
         max_output_tokens: int = 2_000,
+        model_time_seconds: float = 5.0,
     ) -> None:
         self.model = model
         self.world = world
         self.trace = trace
         self.max_steps = max_steps
         self.max_output_tokens = max_output_tokens
+        self.model_time_seconds = model_time_seconds
 
     def run(
         self,
@@ -103,9 +109,11 @@ class ReadOnlyWorker:
                 ),
             },
         ]
+        self.world.pause_time()
         before_hash = self.world.state_hash()
         evidence: set[str] = set()
         output_tokens = 0
+        model_calls = 0
         self.trace.emit(
             "worker_started",
             worker_id=worker_id,
@@ -115,17 +123,25 @@ class ReadOnlyWorker:
         )
         try:
             for step in range(1, self.max_steps + 1):
+                remaining_tokens = self.max_output_tokens - output_tokens
+                if remaining_tokens <= 0:
+                    raise RuntimeError("worker output-token budget exhausted")
                 model_call_id = f"{worker_id}:model-call:{step}"
+                model_calls += 1
                 self.trace.emit(
                     "model_request",
                     actor="worker",
                     worker_id=worker_id,
                     model_call_id=model_call_id,
                     step=step,
+                    max_tokens=remaining_tokens,
+                    fixed_model_time_seconds=self.model_time_seconds,
                 )
                 try:
                     turn = self.model.complete(
-                        messages, [*schemas, RETURN_RESULT_TOOL]
+                        messages,
+                        [*schemas, RETURN_RESULT_TOOL],
+                        max_tokens=remaining_tokens,
                     )
                 except Exception as exc:
                     self.trace.emit(
@@ -271,5 +287,6 @@ class ReadOnlyWorker:
                 state_before_hash=before_hash,
                 state_after_hash=after_hash,
             )
+            self.world.resume_time(model_calls * self.model_time_seconds)
             if after_hash != before_hash:
                 raise RuntimeError("read-only worker changed Gaia2 application state")

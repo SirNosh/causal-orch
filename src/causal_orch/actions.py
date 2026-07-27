@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Mapping, TypeAlias
 
 
@@ -20,6 +21,18 @@ class DelegateAction:
 @dataclass(frozen=True)
 class FinalAction:
     answer: str
+
+
+class NotificationType(str, Enum):
+    USER_MESSAGE = "user_message"
+    ENVIRONMENT_NOTIFICATION = "environment_notification"
+    ENVIRONMENT_STOP = "environment_stop"
+
+
+@dataclass(frozen=True)
+class Notification:
+    type: NotificationType
+    content: str
 
 
 Action: TypeAlias = ToolAction | DelegateAction | FinalAction

@@ -1,5 +1,6 @@
 import pytest
 
+from causal_orch.actions import Notification, NotificationType
 from causal_orch.agent_loop import AgentLoop
 from causal_orch.intervention import (
     Assignment,
@@ -28,6 +29,9 @@ class World:
     def __init__(self):
         self.calls = []
         self.answer = None
+        self.paused = False
+        self.time_offsets = []
+        self.pending_notifications = []
 
     def tool_schemas(self):
         return [schema("lookup")]
@@ -47,7 +51,18 @@ class World:
         return "stable"
 
     def notifications(self):
-        return []
+        notices = self.pending_notifications
+        self.pending_notifications = []
+        return notices
+
+    def pause_time(self):
+        assert not self.paused
+        self.paused = True
+
+    def resume_time(self, fixed_offset_seconds):
+        assert self.paused
+        self.paused = False
+        self.time_offsets.append(fixed_offset_seconds)
 
     def finish(self, answer):
         self.answer = answer
@@ -77,6 +92,7 @@ def test_tool_call_reaches_world_and_loop_finishes():
     assert result.answer == "44"
     assert world.calls == [("orchestrator", "lookup")]
     assert world.answer == "44"
+    assert world.time_offsets == [5.0, 5.0]
     response = next(
         event for event in trace.events if event["event"] == "model_response"
     )
@@ -131,6 +147,7 @@ def test_execute_delegation_returns_worker_result_to_same_loop():
     assert result.intervention_occurred
     assert result.answer == "44"
     assert world.calls == [("worker", "lookup")]
+    assert world.time_offsets == [5.0, 10.0, 5.0]
     assert trace.count("worker_completed") == 1
 
 
@@ -170,3 +187,64 @@ def test_invalid_action_does_not_consume_assignment():
         if event["event"] == "action_validation"
     ]
     assert invalid[0]["payload"]["status"] == "invalid"
+
+
+def test_user_and_environment_notifications_reach_model_context():
+    model = ScriptedModelClient(
+        [("final_answer", {"answer": "44"})]
+    )
+    world = World()
+    world.pending_notifications = [
+        Notification(NotificationType.USER_MESSAGE, "Follow-up detail"),
+        Notification(
+            NotificationType.ENVIRONMENT_NOTIFICATION,
+            "A new message arrived",
+        ),
+    ]
+    trace = Trace("run")
+    loop = AgentLoop(
+        model=model,
+        world=world,
+        worker=ReadOnlyWorker(model=model, world=world, trace=trace),
+        gate=InterventionGate(
+            run_id="run",
+            schedule=FixedAssignment(Assignment.SUPPRESS),
+            trace=trace,
+        ),
+        trace=trace,
+    )
+
+    loop.run(world.task)
+
+    contents = [message["content"] for message in model.messages_seen[0]]
+    assert "Follow-up detail" in contents
+    assert "Environment notification: A new message arrived" in contents
+    assert trace.count("notification_delivered") == 2
+
+
+def test_environment_stop_fails_cleanly_before_model_call():
+    model = ScriptedModelClient(
+        [("final_answer", {"answer": "unused"})]
+    )
+    world = World()
+    world.pending_notifications = [
+        Notification(NotificationType.ENVIRONMENT_STOP, "duration reached")
+    ]
+    trace = Trace("run")
+    loop = AgentLoop(
+        model=model,
+        world=world,
+        worker=ReadOnlyWorker(model=model, world=world, trace=trace),
+        gate=InterventionGate(
+            run_id="run",
+            schedule=FixedAssignment(Assignment.SUPPRESS),
+            trace=trace,
+        ),
+        trace=trace,
+    )
+
+    with pytest.raises(RuntimeError, match="environment stopped"):
+        loop.run(world.task)
+
+    assert model.call_count == 0
+    assert trace.count("notification_delivered") == 1

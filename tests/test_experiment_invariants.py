@@ -22,6 +22,8 @@ class FakeWorld:
         self.validation_calls = 0
         self.closed = False
         self.answer = None
+        self.paused = False
+        self.time_offsets = []
         self.__class__.instances.append(self)
 
     def start(self):
@@ -35,6 +37,15 @@ class FakeWorld:
 
     def notifications(self):
         return []
+
+    def pause_time(self):
+        assert not self.paused
+        self.paused = True
+
+    def resume_time(self, fixed_offset_seconds):
+        assert self.paused
+        self.paused = False
+        self.time_offsets.append(fixed_offset_seconds)
 
     def state_hash(self):
         return "stable"
@@ -119,6 +130,9 @@ def test_forced_execute_and_suppress_both_resume_and_validate():
     assert not suppress.worker_completed
     assert execute.answer == suppress.answer == "44"
     assert execute.reached_validation and suppress.reached_validation
+    execute_world, suppress_world = FakeWorld.instances[-2:]
+    assert execute_world.time_offsets == [5.0, 5.0]
+    assert suppress_world.time_offsets == [5.0]
 
 
 def test_jsonl_preserves_raw_canonical_executed_and_stable_ids(tmp_path):

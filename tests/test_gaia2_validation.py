@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from causal_orch.actions import NotificationType
 from causal_orch.gaia2_adapter import (
     Gaia2Adapter,
     worker_tool_exclusion_reason,
@@ -40,6 +41,7 @@ class RunWorld:
     def __init__(self, _):
         self.scenario = type("ScenarioRecord", (), {"scenario_id": "gaia"})()
         self._started = False
+        self.paused = False
 
     def start(self):
         self._started = True
@@ -52,6 +54,12 @@ class RunWorld:
 
     def notifications(self):
         return []
+
+    def pause_time(self):
+        self.paused = True
+
+    def resume_time(self, fixed_offset_seconds):
+        self.paused = False
 
     def state_hash(self):
         return "stable"
@@ -113,3 +121,44 @@ def test_worker_registry_rejects_write_unknown_and_control_tools():
     assert worker_tool_exclusion_reason(
         tool("SystemApp__wait_for_notification", False, "SystemApp")
     ) == "agent_or_environment_control"
+
+
+def test_gaia2_adapter_returns_all_dynamic_notification_types():
+    from datetime import datetime, timezone
+    from are.simulation.notification_system import Message, MessageType
+
+    messages = [
+        Message(MessageType.USER_MESSAGE, "Initial task", datetime.now(timezone.utc)),
+        Message(MessageType.USER_MESSAGE, "Follow-up", datetime.now(timezone.utc)),
+        Message(
+            MessageType.ENVIRONMENT_NOTIFICATION,
+            "Incoming event",
+            datetime.now(timezone.utc),
+        ),
+        Message(
+            MessageType.ENVIRONMENT_STOP,
+            "Stopped",
+            datetime.now(timezone.utc),
+        ),
+    ]
+    queue = SimpleNamespace(get_by_timestamp=lambda _: messages)
+    adapter = object.__new__(Gaia2Adapter)
+    adapter.task = "Initial task"
+    adapter._initial_user_message_consumed = False
+    adapter.environment = SimpleNamespace(
+        time_manager=SimpleNamespace(time=lambda: 0),
+        notification_system=SimpleNamespace(message_queue=queue),
+    )
+
+    notices = adapter.notifications()
+
+    assert [notice.type for notice in notices] == [
+        NotificationType.USER_MESSAGE,
+        NotificationType.ENVIRONMENT_NOTIFICATION,
+        NotificationType.ENVIRONMENT_STOP,
+    ]
+    assert [notice.content for notice in notices] == [
+        "Follow-up",
+        "Incoming event",
+        "Stopped",
+    ]

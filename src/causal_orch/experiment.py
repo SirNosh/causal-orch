@@ -15,9 +15,8 @@ from .gaia2_adapter import Gaia2Adapter
 from .intervention import (
     Assignment,
     AssignmentSchedule,
-    FixedAssignment,
     InterventionGate,
-    RandomAssignment,
+    prepare_assignment_manifest,
 )
 from .model_client import ModelClient, OpenAICompatibleClient
 from .trace import Trace
@@ -28,6 +27,8 @@ from .worker import ReadOnlyWorker
 class RunOutcome:
     run_id: str
     scenario_id: str
+    attempt_id: str
+    assignment_unit_id: str
     assignment_id: str | None
     assignment: str | None
     eligible_delegation: bool
@@ -58,11 +59,14 @@ def run_one(
     schedule: AssignmentSchedule,
     run_id: str | None = None,
     attempt_id: str = "1",
+    assignment_unit_id: str | None = None,
     trace_path: str | Path | None = None,
     forced_delegation_objective: str | None = None,
+    model_time_seconds: float = 5.0,
     adapter_factory: Callable[[str | Path], Any] = Gaia2Adapter,
 ) -> RunOutcome:
     run_id = run_id or uuid4().hex
+    assignment_unit_id = assignment_unit_id or run_id
     world = adapter_factory(scenario_path)
     scenario_id = getattr(
         getattr(world, "scenario", None),
@@ -74,15 +78,27 @@ def run_one(
         trace_path,
         scenario_id=scenario_id,
         attempt_id=attempt_id,
+        assignment_unit_id=assignment_unit_id,
     )
-    gate = InterventionGate(run_id=run_id, schedule=schedule, trace=trace)
-    worker = ReadOnlyWorker(model=model, world=world, trace=trace)
+    gate = InterventionGate(
+        run_id=run_id,
+        assignment_unit_id=assignment_unit_id,
+        schedule=schedule,
+        trace=trace,
+    )
+    worker = ReadOnlyWorker(
+        model=model,
+        world=world,
+        trace=trace,
+        model_time_seconds=model_time_seconds,
+    )
     loop = AgentLoop(
         model=model,
         world=world,
         worker=worker,
         gate=gate,
         trace=trace,
+        model_time_seconds=model_time_seconds,
         forced_delegation_objective=forced_delegation_objective,
     )
     result = None
@@ -121,6 +137,8 @@ def run_one(
     return RunOutcome(
         run_id=run_id,
         scenario_id=scenario_id,
+        attempt_id=attempt_id,
+        assignment_unit_id=assignment_unit_id,
         assignment_id=gate.assignment_id,
         assignment=gate.assignment.value if gate.assignment else None,
         eligible_delegation=gate.decided,
@@ -137,16 +155,38 @@ def run_one(
     )
 
 
-def _schedule(
-    mode: str, seed: str, assignment: str | None = None
-) -> AssignmentSchedule:
-    if assignment is not None:
-        return FixedAssignment(Assignment(assignment))
-    if mode == "smoke":
-        return FixedAssignment(Assignment.EXECUTE)
-    if mode == "proposal":
-        return FixedAssignment(Assignment.SUPPRESS)
-    return RandomAssignment(seed)
+def _scenario_id_from_path(path: str | Path) -> str:
+    scenario_path = Path(path)
+    data = json.loads(scenario_path.read_text(encoding="utf-8"))
+    return str(
+        data.get("scenario_id") or data.get("id") or scenario_path.stem
+    )
+
+
+def _safe_filename(value: str) -> str:
+    return "".join(
+        character if character.isalnum() or character in "-_." else "-"
+        for character in value
+    )
+
+
+def _next_attempt_ids(
+    trace_root: Path, assignment_unit_ids: list[str]
+) -> dict[str, str]:
+    latest = {unit: 0 for unit in assignment_unit_ids}
+    for trace_path in trace_root.glob("*.jsonl"):
+        try:
+            with trace_path.open(encoding="utf-8") as handle:
+                first_line = handle.readline()
+            record = json.loads(first_line)
+            unit = record.get("assignment_unit_id")
+            if unit in latest:
+                latest[unit] = max(
+                    latest[unit], int(record.get("attempt_id") or 0)
+                )
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return {unit: str(value + 1) for unit, value in latest.items()}
 
 
 def run_batch(
@@ -158,20 +198,68 @@ def run_batch(
     trace_dir: str | Path,
     assignment: str | None = None,
     forced_delegation_objective: str | None = None,
+    batch_id: str | None = None,
+    attempt_id: str | None = None,
+    assignment_manifest_path: str | Path | None = None,
+    model_time_seconds: float = 5.0,
 ) -> list[RunOutcome]:
     trace_root = Path(trace_dir)
+    batch_id = batch_id or f"{mode}-{seed}"
+    repetitions: dict[str, int] = {}
+    units: list[tuple[str | Path, str, str]] = []
+    for scenario_path in scenario_paths:
+        scenario_id = _scenario_id_from_path(scenario_path)
+        repetitions[scenario_id] = repetitions.get(scenario_id, 0) + 1
+        assignment_unit_id = (
+            f"{batch_id}:{scenario_id}:repeat-{repetitions[scenario_id]}"
+        )
+        units.append((scenario_path, scenario_id, assignment_unit_id))
+    fixed_assignment = (
+        Assignment(assignment)
+        if assignment is not None
+        else (
+            Assignment.EXECUTE
+            if mode == "smoke"
+            else Assignment.SUPPRESS if mode == "proposal" else None
+        )
+    )
+    manifest_path = Path(
+        assignment_manifest_path
+        or trace_root
+        / f"{_safe_filename(batch_id)}-assignment-manifest.json"
+    )
+    schedule = prepare_assignment_manifest(
+        manifest_path,
+        batch_id=batch_id,
+        seed=seed,
+        assignment_unit_ids=[unit[2] for unit in units],
+        fixed_assignment=fixed_assignment,
+    )
+    attempt_ids = (
+        {unit[2]: attempt_id for unit in units}
+        if attempt_id is not None
+        else _next_attempt_ids(
+            trace_root, [unit[2] for unit in units]
+        )
+    )
     outcomes = []
-    for index, scenario_path in enumerate(scenario_paths, 1):
-        run_id = f"{mode}-{index}-{uuid4().hex[:8]}"
+    for scenario_path, scenario_id, assignment_unit_id in units:
+        unit_attempt_id = attempt_ids[assignment_unit_id]
+        run_id = (
+            f"{mode}-{scenario_id}-attempt-{unit_attempt_id}-"
+            f"{uuid4().hex[:8]}"
+        )
         outcomes.append(
             run_one(
                 scenario_path=scenario_path,
                 model=model,
-                schedule=_schedule(mode, seed, assignment),
+                schedule=schedule,
                 run_id=run_id,
-                attempt_id=str(index),
+                attempt_id=unit_attempt_id,
+                assignment_unit_id=assignment_unit_id,
                 trace_path=trace_root / f"{run_id}.jsonl",
                 forced_delegation_objective=forced_delegation_objective,
+                model_time_seconds=model_time_seconds,
             )
         )
     return outcomes
@@ -189,6 +277,10 @@ def main(mode: str) -> int:
     parser.add_argument("--model", default=os.environ.get("CAUSAL_ORCH_MODEL"))
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
     parser.add_argument("--seed", default="paper-1-pilot")
+    parser.add_argument("--batch-id")
+    parser.add_argument("--attempt-id")
+    parser.add_argument("--assignment-manifest")
+    parser.add_argument("--model-time-seconds", type=float, default=5.0)
     parser.add_argument("--trace-dir", default="artifacts/minimal")
     parser.add_argument(
         "--assignment", choices=[item.value for item in Assignment]
@@ -215,6 +307,10 @@ def main(mode: str) -> int:
         trace_dir=args.trace_dir,
         assignment=args.assignment,
         forced_delegation_objective=args.force_delegation_objective,
+        batch_id=args.batch_id,
+        attempt_id=args.attempt_id,
+        assignment_manifest_path=args.assignment_manifest,
+        model_time_seconds=args.model_time_seconds,
     )
     print(json.dumps([asdict(outcome) for outcome in outcomes], indent=2))
     return 0 if all(outcome.error is None for outcome in outcomes) else 1

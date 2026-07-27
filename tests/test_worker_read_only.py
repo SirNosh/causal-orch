@@ -18,17 +18,30 @@ def schema(name):
 class WorkerWorld:
     def __init__(self):
         self.calls = []
+        self.paused = False
+        self.time_offsets = []
 
     def read_only_tool_schemas(self):
         return [schema("read")]
 
     def execute_read_tool(self, name, arguments):
+        assert self.paused
         assert name == "read"
         self.calls.append(name)
         return "evidence", "tool-result-1"
 
     def state_hash(self):
+        assert self.paused
         return "unchanged"
+
+    def pause_time(self):
+        assert not self.paused
+        self.paused = True
+
+    def resume_time(self, fixed_offset_seconds):
+        assert self.paused
+        self.paused = False
+        self.time_offsets.append(fixed_offset_seconds)
 
 
 def test_worker_can_use_read_tool_and_return_cited_result():
@@ -55,6 +68,8 @@ def test_worker_can_use_read_tool_and_return_cited_result():
     assert result.result == "The answer is 44."
     assert result.evidence == ("tool-result-1",)
     assert world.calls == ["read"]
+    assert world.time_offsets == [10.0]
+    assert model.max_tokens_seen == [2_000, 2_000]
     responses = [
         event for event in trace.events if event["event"] == "model_response"
     ]

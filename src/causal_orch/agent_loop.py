@@ -11,6 +11,8 @@ from .actions import (
     FINAL_TOOL,
     DelegateAction,
     FinalAction,
+    Notification,
+    NotificationType,
     ToolAction,
     decode_action,
 )
@@ -27,7 +29,11 @@ class AgentWorld(Protocol):
         self, name: str, arguments: Mapping[str, Any]
     ) -> tuple[str, str]: ...
 
-    def notifications(self) -> Sequence[str]: ...
+    def pause_time(self) -> None: ...
+
+    def resume_time(self, fixed_offset_seconds: float) -> None: ...
+
+    def notifications(self) -> Sequence[Notification]: ...
 
     def finish(self, answer: str) -> None: ...
 
@@ -49,6 +55,7 @@ class AgentLoop:
         gate: InterventionGate,
         trace: Trace,
         max_steps: int = 20,
+        model_time_seconds: float = 5.0,
         forced_delegation_objective: str | None = None,
     ) -> None:
         self.model = model
@@ -57,6 +64,7 @@ class AgentLoop:
         self.gate = gate
         self.trace = trace
         self.max_steps = max_steps
+        self.model_time_seconds = model_time_seconds
         self.forced_delegation_objective = forced_delegation_objective
 
     def run(self, task: str) -> AgentResult:
@@ -81,6 +89,24 @@ class AgentLoop:
         observations: list[str] = []
         self.trace.emit("agent_started", task=task, model=self.model.model)
 
+        def deliver_notifications() -> None:
+            for notice in self.world.notifications():
+                self.trace.emit(
+                    "notification_delivered",
+                    notification_type=notice.type,
+                    content=notice.content,
+                )
+                if notice.type is NotificationType.ENVIRONMENT_STOP:
+                    raise RuntimeError(
+                        f"Gaia2 environment stopped: {notice.content}"
+                    )
+                if notice.type is NotificationType.USER_MESSAGE:
+                    content = notice.content
+                else:
+                    content = f"Environment notification: {notice.content}"
+                observations.append(content)
+                messages.append({"role": "user", "content": content})
+
         def delegate(objective: str, call_id: str):
             result = self.gate.intervene(
                 objective,
@@ -102,6 +128,7 @@ class AgentLoop:
             )
             return result.observation
 
+        deliver_notifications()
         if self.forced_delegation_objective is not None:
             call_id = f"{self.trace.run_id}:forced-delegation"
             arguments = {"objective": self.forced_delegation_objective}
@@ -138,6 +165,7 @@ class AgentLoop:
                     "content": observation,
                 }
             )
+            deliver_notifications()
 
         for step in range(1, self.max_steps + 1):
             model_call_id = (
@@ -148,7 +176,9 @@ class AgentLoop:
                 actor="orchestrator",
                 model_call_id=model_call_id,
                 step=step,
+                fixed_model_time_seconds=self.model_time_seconds,
             )
+            self.world.pause_time()
             try:
                 turn = self.model.complete(messages, tools)
             except Exception as exc:
@@ -162,6 +192,8 @@ class AgentLoop:
                     raw=getattr(exc, "raw_response", None),
                 )
                 raise
+            finally:
+                self.world.resume_time(self.model_time_seconds)
             self.trace.emit(
                 "model_response",
                 actor="orchestrator",
@@ -236,11 +268,6 @@ class AgentLoop:
             else:  # pragma: no cover - the union is exhaustive
                 raise AssertionError(f"unsupported action: {action!r}")
 
-            notices = list(self.world.notifications())
-            if notices:
-                observation += "\nEnvironment notifications:\n" + "\n".join(
-                    notices
-                )
             observations.append(observation)
             messages.append(
                 {
@@ -249,4 +276,5 @@ class AgentLoop:
                     "content": observation,
                 }
             )
+            deliver_notifications()
         raise RuntimeError("orchestrator step budget exhausted")

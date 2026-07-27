@@ -18,6 +18,16 @@ notification, time-control, and generic execution tools. Control returns a
 fixed, strategy-neutral status object. The same orchestrator loop then
 continues.
 
+Assignments are written before a batch starts to a small JSON manifest keyed by
+`batch_id:scenario_id:repetition`. Retrying a unit creates a new run and
+incremented attempt while preserving its original assignment. Randomized
+manifests are deterministically balanced within the batch.
+
+Gaia2 time is paused during every model call. Orchestrator calls resume with a
+fixed five-second simulated offset; a worker stays paused for its entire episode
+and resumes once with five seconds per worker call. Provider wall latency
+therefore cannot become part of treatment.
+
 ## Run
 
 Install the locked Python 3.11 environment:
@@ -41,6 +51,15 @@ uv run python scripts/proposal_pilot.py --scenario C:\path\scenario.json
 uv run python scripts/randomized_pilot.py --scenario C:\path\scenario.json
 ```
 
+Use a stable batch name when runs may be retried. Attempt IDs are inferred from
+existing traces, or can be supplied explicitly:
+
+```powershell
+uv run python scripts/randomized_pilot.py `
+  --batch-id proposal-pilot-01 `
+  --scenario C:\path\scenario.json
+```
+
 The forced-delegation integration check can be run under both assignments:
 
 ```powershell
@@ -54,7 +73,9 @@ For a remote endpoint, set `OPENAI_API_KEY` or select another variable with
 `--api-key-env`. JSONL traces are written under `artifacts/minimal` by default.
 Raw provider responses, token counts, latency, tool calls, assignment, worker
 completion, state hashes, canonical and executed actions, stable identifiers,
-and Gaia2's binary result are retained.
+typed user/environment/stop notifications, and Gaia2's binary result are
+retained. Malformed provider responses retain their raw payload. Worker requests
+include the remaining hard output-token limit.
 
 `smoke.py` fixes assignment to execute, `proposal_pilot.py` fixes assignment to
 suppress while measuring proposal behavior, and `randomized_pilot.py` uses a
@@ -70,5 +91,7 @@ The tests cover typed action decoding, exact tool dispatch, assignment
 concealment, one intervention per run, suppression without worker launch,
 structural worker isolation, worker state hashing, treatment-failure retention,
 fresh environments, raw/canonical/executed trace alignment, forced treatment
-and control continuation, and native Gaia2 validation. Malformed actions fail
-the run under a fixed no-repair policy and never consume an assignment.
+and control continuation, stable retry assignments, fixed simulated model time,
+typed notifications, hard worker token limits, and native Gaia2 validation.
+Malformed actions fail the run under a fixed no-repair policy and never consume
+an assignment.

@@ -1,7 +1,0 @@
-{
-  "error": {
-    "code": 400,
-    "message": "Failed to initialize samplers: Unexpected empty grammar stack after accepting piece:  assistant (13886)",
-    "type": "invalid_request_error"
-  }
-}
