@@ -25,17 +25,31 @@ def _json_safe(value: Any) -> Any:
 
 
 class Trace:
-    def __init__(self, run_id: str, path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str,
+        path: str | Path | None = None,
+        *,
+        scenario_id: str | None = None,
+        attempt_id: str = "1",
+    ) -> None:
         self.run_id = run_id
         self.path = Path(path) if path is not None else None
+        self.scenario_id = scenario_id
+        self.attempt_id = attempt_id
         self.events: list[dict[str, Any]] = []
 
     def emit(self, event: str, **payload: Any) -> dict[str, Any]:
+        sequence = len(self.events) + 1
         record = {
-            "sequence": len(self.events) + 1,
+            "event_id": f"{self.run_id}:event:{sequence:04d}",
+            "sequence": sequence,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "run_id": self.run_id,
+            "scenario_id": self.scenario_id,
+            "attempt_id": self.attempt_id,
             "event": event,
+            "event_type": event,
             "payload": _json_safe(payload),
         }
         self.events.append(record)

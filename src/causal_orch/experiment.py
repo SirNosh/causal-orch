@@ -28,6 +28,7 @@ from .worker import ReadOnlyWorker
 class RunOutcome:
     run_id: str
     scenario_id: str
+    assignment_id: str | None
     assignment: str | None
     eligible_delegation: bool
     worker_completed: bool
@@ -56,16 +57,33 @@ def run_one(
     model: ModelClient,
     schedule: AssignmentSchedule,
     run_id: str | None = None,
+    attempt_id: str = "1",
     trace_path: str | Path | None = None,
+    forced_delegation_objective: str | None = None,
     adapter_factory: Callable[[str | Path], Any] = Gaia2Adapter,
 ) -> RunOutcome:
     run_id = run_id or uuid4().hex
-    trace = Trace(run_id, trace_path)
     world = adapter_factory(scenario_path)
+    scenario_id = getattr(
+        getattr(world, "scenario", None),
+        "scenario_id",
+        Path(scenario_path).stem,
+    )
+    trace = Trace(
+        run_id,
+        trace_path,
+        scenario_id=scenario_id,
+        attempt_id=attempt_id,
+    )
     gate = InterventionGate(run_id=run_id, schedule=schedule, trace=trace)
     worker = ReadOnlyWorker(model=model, world=world, trace=trace)
     loop = AgentLoop(
-        model=model, world=world, worker=worker, gate=gate, trace=trace
+        model=model,
+        world=world,
+        worker=worker,
+        gate=gate,
+        trace=trace,
+        forced_delegation_objective=forced_delegation_objective,
     )
     result = None
     validation_success = None
@@ -77,7 +95,9 @@ def run_one(
         result = loop.run(world.task)
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
-        trace.emit("run_failed", error=error)
+        trace.emit(
+            "run_failed", error_type=type(exc).__name__, error=error
+        )
     try:
         if getattr(world, "_started", True):
             validation_success, validation = world.validate()
@@ -90,17 +110,18 @@ def run_one(
     except Exception as exc:
         validation_error = f"{type(exc).__name__}: {exc}"
         error = error or validation_error
-        trace.emit("validation_failed", error=validation_error)
+        trace.emit(
+            "validation_failed",
+            error_type=type(exc).__name__,
+            error=validation_error,
+        )
     finally:
         world.close()
     trace.emit("run_completed", success=validation_success, error=error)
     return RunOutcome(
         run_id=run_id,
-        scenario_id=getattr(
-            getattr(world, "scenario", None),
-            "scenario_id",
-            Path(scenario_path).stem,
-        ),
+        scenario_id=scenario_id,
+        assignment_id=gate.assignment_id,
         assignment=gate.assignment.value if gate.assignment else None,
         eligible_delegation=gate.decided,
         worker_completed=trace.count("worker_completed") == 1,
@@ -116,7 +137,11 @@ def run_one(
     )
 
 
-def _schedule(mode: str, seed: str) -> AssignmentSchedule:
+def _schedule(
+    mode: str, seed: str, assignment: str | None = None
+) -> AssignmentSchedule:
+    if assignment is not None:
+        return FixedAssignment(Assignment(assignment))
     if mode == "smoke":
         return FixedAssignment(Assignment.EXECUTE)
     if mode == "proposal":
@@ -131,6 +156,8 @@ def run_batch(
     mode: str,
     seed: str,
     trace_dir: str | Path,
+    assignment: str | None = None,
+    forced_delegation_objective: str | None = None,
 ) -> list[RunOutcome]:
     trace_root = Path(trace_dir)
     outcomes = []
@@ -140,9 +167,11 @@ def run_batch(
             run_one(
                 scenario_path=scenario_path,
                 model=model,
-                schedule=_schedule(mode, seed),
+                schedule=_schedule(mode, seed, assignment),
                 run_id=run_id,
+                attempt_id=str(index),
                 trace_path=trace_root / f"{run_id}.jsonl",
+                forced_delegation_objective=forced_delegation_objective,
             )
         )
     return outcomes
@@ -161,6 +190,10 @@ def main(mode: str) -> int:
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
     parser.add_argument("--seed", default="paper-1-pilot")
     parser.add_argument("--trace-dir", default="artifacts/minimal")
+    parser.add_argument(
+        "--assignment", choices=[item.value for item in Assignment]
+    )
+    parser.add_argument("--force-delegation-objective")
     args = parser.parse_args()
     if not args.model:
         parser.error("--model or CAUSAL_ORCH_MODEL is required")
@@ -180,6 +213,8 @@ def main(mode: str) -> int:
         mode=mode,
         seed=args.seed,
         trace_dir=args.trace_dir,
+        assignment=args.assignment,
+        forced_delegation_objective=args.force_delegation_objective,
     )
     print(json.dumps([asdict(outcome) for outcome in outcomes], indent=2))
     return 0 if all(outcome.error is None for outcome in outcomes) else 1

@@ -68,11 +68,15 @@ def decode_action(
     """Convert one native function call into the experiment's action union."""
 
     if name == "delegate":
+        if set(arguments) != {"objective"}:
+            raise ValueError("delegate requires exactly objective")
         objective = arguments.get("objective")
         if not isinstance(objective, str):
             raise ValueError("delegate.objective must be a string")
         return DelegateAction(objective=objective)
     if name == "final_answer":
+        if set(arguments) != {"answer"}:
+            raise ValueError("final_answer requires exactly answer")
         answer = arguments.get("answer")
         if not isinstance(answer, str):
             raise ValueError("final_answer.answer must be a string")

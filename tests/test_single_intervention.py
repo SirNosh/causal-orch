@@ -1,4 +1,10 @@
-from causal_orch.intervention import Assignment, InterventionGate
+import json
+
+from causal_orch.intervention import (
+    Assignment,
+    AssignmentRecord,
+    InterventionGate,
+)
 from causal_orch.trace import Trace
 
 
@@ -9,7 +15,9 @@ class CountingSchedule:
 
     def reveal(self, run_id):
         self.reveals += 1
-        return self.assignment
+        return AssignmentRecord(
+            f"{run_id}:assignment:1", self.assignment
+        )
 
 
 def test_only_first_valid_delegation_is_randomized():
@@ -22,12 +30,12 @@ def test_only_first_valid_delegation_is_randomized():
     first = gate.intervene(
         "first",
         terminal=False,
-        run_worker=lambda objective: workers.append(objective) or "done",
+        run_worker=lambda objective, _: workers.append(objective) or "done",
     )
     second = gate.intervene(
         "second",
         terminal=False,
-        run_worker=lambda objective: workers.append(objective) or "done",
+        run_worker=lambda objective, _: workers.append(objective) or "done",
     )
 
     assert first.eligible
@@ -44,7 +52,7 @@ def test_suppression_never_launches_worker():
     )
     launched = False
 
-    def worker(_):
+    def worker(*_):
         nonlocal launched
         launched = True
         return "unexpected"
@@ -53,3 +61,46 @@ def test_suppression_never_launches_worker():
 
     assert result.assignment is Assignment.SUPPRESS
     assert not launched
+
+
+def test_later_delegations_receive_one_fixed_already_decided_result():
+    gate = InterventionGate(
+        run_id="run",
+        schedule=CountingSchedule(Assignment.SUPPRESS),
+        trace=Trace("run"),
+    )
+    gate.intervene("first", terminal=False, run_worker=lambda *_: "unused")
+
+    second = gate.intervene(
+        "second", terminal=False, run_worker=lambda *_: "unused"
+    )
+    third = gate.intervene(
+        "third", terminal=False, run_worker=lambda *_: "unused"
+    )
+
+    expected = {"status": "DELEGATION_ALREADY_DECIDED"}
+    assert json.loads(second.observation) == expected
+    assert second.observation == third.observation
+
+
+def test_suppression_observation_is_fixed_and_strategy_neutral():
+    observations = []
+    for run_id in ("run-1", "run-2"):
+        gate = InterventionGate(
+            run_id=run_id,
+            schedule=CountingSchedule(Assignment.SUPPRESS),
+            trace=Trace(run_id),
+        )
+        observations.append(
+            gate.intervene(
+                "task-specific objective",
+                terminal=False,
+                run_worker=lambda *_: "unused",
+            ).observation
+        )
+
+    assert observations[0] == observations[1]
+    assert json.loads(observations[0]) == {
+        "reason": "EXPERIMENTAL_CONTROL",
+        "status": "DELEGATION_UNAVAILABLE",
+    }

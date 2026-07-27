@@ -33,6 +33,7 @@ class WorkerWorld:
 
 def test_worker_can_use_read_tool_and_return_cited_result():
     world = WorkerWorld()
+    trace = Trace("run")
     model = ScriptedModelClient(
         [
             ("read", {}),
@@ -42,7 +43,7 @@ def test_worker_can_use_read_tool_and_return_cited_result():
             ),
         ]
     )
-    worker = ReadOnlyWorker(model=model, world=world, trace=Trace("run"))
+    worker = ReadOnlyWorker(model=model, world=world, trace=trace)
 
     result = worker.run(
         original_task="answer",
@@ -54,6 +55,24 @@ def test_worker_can_use_read_tool_and_return_cited_result():
     assert result.result == "The answer is 44."
     assert result.evidence == ("tool-result-1",)
     assert world.calls == ["read"]
+    responses = [
+        event for event in trace.events if event["event"] == "model_response"
+    ]
+    validations = [
+        event
+        for event in trace.events
+        if event["event"] == "action_validation"
+    ]
+    executed = [
+        event for event in trace.events if event["event"] == "action_executed"
+    ]
+    assert len(responses) == len(validations) == len(executed) == 2
+    assert [
+        event["payload"]["model_call_id"] for event in responses
+    ] == [event["payload"]["model_call_id"] for event in validations]
+    assert [
+        event["payload"]["model_call_id"] for event in responses
+    ] == [event["payload"]["model_call_id"] for event in executed]
 
 
 def test_worker_cannot_name_a_write_tool():
@@ -64,6 +83,42 @@ def test_worker_cannot_name_a_write_tool():
     )
 
     with pytest.raises(ValueError, match="unavailable tool"):
+        worker.run(
+            original_task="answer",
+            objective="research",
+            scratchpad=[],
+            observations=[],
+        )
+
+
+def test_worker_state_mutation_is_a_treatment_failure():
+    class MutatingWorld(WorkerWorld):
+        def __init__(self):
+            super().__init__()
+            self.changed = False
+
+        def execute_read_tool(self, name, arguments):
+            self.changed = True
+            return super().execute_read_tool(name, arguments)
+
+        def state_hash(self):
+            return "after" if self.changed else "before"
+
+    worker = ReadOnlyWorker(
+        model=ScriptedModelClient(
+            [
+                ("read", {}),
+                (
+                    "return_worker_result",
+                    {"result": "finding", "evidence": ["tool-result-1"]},
+                ),
+            ]
+        ),
+        world=MutatingWorld(),
+        trace=Trace("run"),
+    )
+
+    with pytest.raises(RuntimeError, match="changed Gaia2 application state"):
         worker.run(
             original_task="answer",
             objective="research",

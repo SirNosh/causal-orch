@@ -74,6 +74,49 @@ def app_tool_schema(tool: Any) -> dict[str, Any]:
     }
 
 
+def worker_tool_exclusion_reason(tool: Any) -> str | None:
+    """Return why a Gaia2 tool cannot cross the worker boundary."""
+
+    if getattr(tool, "write_operation", None) is not False:
+        return "write_status_not_explicitly_read_only"
+    name = str(getattr(tool, "_public_name", None) or tool.name)
+    app_name = str(getattr(tool, "app_name", ""))
+    class_name = str(getattr(tool, "class_name", ""))
+    function = getattr(tool, "function", None)
+    function_name = str(
+        getattr(function, "__name__", None)
+        or getattr(tool, "func_name", "")
+        or name.rsplit("__", 1)[-1]
+    )
+    identity = " ".join((name, app_name, class_name)).lower()
+    if any(
+        marker in identity
+        for marker in (
+            "agentuserinterface",
+            "notification",
+            "reminder",
+            "systemapp",
+        )
+    ):
+        return "agent_or_environment_control"
+    lowered_function = function_name.lower()
+    if any(
+        marker in lowered_function
+        for marker in (
+            "advance_time",
+            "execute",
+            "pause",
+            "resume",
+            "run_command",
+            "send_message",
+            "sleep",
+            "wait",
+        )
+    ):
+        return "indirect_side_effect_or_control"
+    return None
+
+
 class Gaia2Adapter:
     """Own one fresh Gaia2 scenario and environment for one run."""
 
@@ -150,7 +193,7 @@ class Gaia2Adapter:
             self._tools[name] = tool
             if not name.startswith("AgentUserInterface__"):
                 self._orchestrator_tools[name] = tool
-            if tool.write_operation is False:
+            if worker_tool_exclusion_reason(tool) is None:
                 self._read_tools[name] = tool
             if "AgentUserInterface__send_message_to_user" == name:
                 tool.class_instance.wait_for_user_response = False

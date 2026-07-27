@@ -1,4 +1,8 @@
-from causal_orch.intervention import Assignment, InterventionGate
+from causal_orch.intervention import (
+    Assignment,
+    AssignmentRecord,
+    InterventionGate,
+)
 from causal_orch.trace import Trace
 
 
@@ -8,7 +12,7 @@ class SpySchedule:
 
     def reveal(self, run_id):
         self.reveals += 1
-        return Assignment.EXECUTE
+        return AssignmentRecord(f"{run_id}:assignment:1", Assignment.EXECUTE)
 
 
 def test_assignment_is_revealed_only_after_eligibility():
@@ -16,12 +20,14 @@ def test_assignment_is_revealed_only_after_eligibility():
     schedule = SpySchedule()
     gate = InterventionGate(run_id="run", schedule=schedule, trace=trace)
 
-    rejected = gate.intervene("", terminal=False, run_worker=lambda _: "unused")
+    rejected = gate.intervene(
+        "", terminal=False, run_worker=lambda *_: "unused"
+    )
     assert not rejected.eligible
     assert schedule.reveals == 0
 
     accepted = gate.intervene(
-        "Find the policy", terminal=False, run_worker=lambda _: "found"
+        "Find the policy", terminal=False, run_worker=lambda *_: "found"
     )
     assert accepted.eligible
     assert schedule.reveals == 1

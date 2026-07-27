@@ -1,4 +1,9 @@
-from causal_orch.gaia2_adapter import Gaia2Adapter
+from types import SimpleNamespace
+
+from causal_orch.gaia2_adapter import (
+    Gaia2Adapter,
+    worker_tool_exclusion_reason,
+)
 from causal_orch.experiment import run_one
 from causal_orch.intervention import Assignment, FixedAssignment
 from causal_orch.model_client import ScriptedModelClient
@@ -75,3 +80,36 @@ def test_run_reaches_native_validation_after_final_action():
     assert outcome.gaia2_success is True
     assert outcome.answer == "44"
     assert outcome.error is None
+
+
+def test_worker_registry_rejects_write_unknown_and_control_tools():
+    def tool(name, write_operation, app_name="Emails"):
+        return SimpleNamespace(
+            name=name,
+            _public_name=name,
+            app_name=app_name,
+            class_name=app_name,
+            function=None,
+            func_name=name.rsplit("__", 1)[-1],
+            write_operation=write_operation,
+        )
+
+    assert worker_tool_exclusion_reason(
+        tool("Emails__list_emails", False)
+    ) is None
+    assert worker_tool_exclusion_reason(
+        tool("Emails__delete_email", True)
+    ) == "write_status_not_explicitly_read_only"
+    assert worker_tool_exclusion_reason(
+        tool("Mystery__lookup", None)
+    ) == "write_status_not_explicitly_read_only"
+    assert worker_tool_exclusion_reason(
+        tool(
+            "AgentUserInterface__get_messages",
+            False,
+            "AgentUserInterface",
+        )
+    ) == "agent_or_environment_control"
+    assert worker_tool_exclusion_reason(
+        tool("SystemApp__wait_for_notification", False, "SystemApp")
+    ) == "agent_or_environment_control"

@@ -13,8 +13,10 @@ native validation. Model actions are provider-native function calls:
 
 The first eligible `delegate` call reveals one concealed assignment. Treatment
 runs a fresh worker with only Gaia2 tools explicitly marked
-`write_operation=False`. Control returns a fixed suppression observation. The
-same orchestrator loop then continues.
+`write_operation=False`, excluding user communication, system, reminder,
+notification, time-control, and generic execution tools. Control returns a
+fixed, strategy-neutral status object. The same orchestrator loop then
+continues.
 
 ## Run
 
@@ -39,10 +41,20 @@ uv run python scripts/proposal_pilot.py --scenario C:\path\scenario.json
 uv run python scripts/randomized_pilot.py --scenario C:\path\scenario.json
 ```
 
+The forced-delegation integration check can be run under both assignments:
+
+```powershell
+uv run python scripts/smoke.py --scenario C:\path\scenario.json `
+  --force-delegation-objective "Find the relevant fact" --assignment execute
+uv run python scripts/smoke.py --scenario C:\path\scenario.json `
+  --force-delegation-objective "Find the relevant fact" --assignment suppress
+```
+
 For a remote endpoint, set `OPENAI_API_KEY` or select another variable with
 `--api-key-env`. JSONL traces are written under `artifacts/minimal` by default.
 Raw provider responses, token counts, latency, tool calls, assignment, worker
-completion, and Gaia2's binary result are retained.
+completion, state hashes, canonical and executed actions, stable identifiers,
+and Gaia2's binary result are retained.
 
 `smoke.py` fixes assignment to execute, `proposal_pilot.py` fixes assignment to
 suppress while measuring proposal behavior, and `randomized_pilot.py` uses a
@@ -56,5 +68,7 @@ uv run --locked pytest -q
 
 The tests cover typed action decoding, exact tool dispatch, assignment
 concealment, one intervention per run, suppression without worker launch,
-structural worker isolation, worker state hashing, loop continuation, and native
-Gaia2 validation.
+structural worker isolation, worker state hashing, treatment-failure retention,
+fresh environments, raw/canonical/executed trace alignment, forced treatment
+and control continuation, and native Gaia2 validation. Malformed actions fail
+the run under a fixed no-repair policy and never consume an assignment.
