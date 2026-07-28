@@ -93,6 +93,7 @@ def test_tool_call_reaches_world_and_loop_finishes():
     assert world.calls == [("orchestrator", "lookup")]
     assert world.answer == "44"
     assert world.time_offsets == [5.0, 5.0]
+    assert model.max_tokens_seen == [8_192, 8_192]
     response = next(
         event for event in trace.events if event["event"] == "model_response"
     )
@@ -248,3 +249,31 @@ def test_environment_stop_fails_cleanly_before_model_call():
 
     assert model.call_count == 0
     assert trace.count("notification_delivered") == 1
+
+
+def test_direct_baseline_excludes_delegation_from_tools_and_prompt():
+    model = ScriptedModelClient(
+        [("final_answer", {"answer": "44"})]
+    )
+    world = World()
+    trace = Trace("run")
+    loop = AgentLoop(
+        model=model,
+        world=world,
+        worker=ReadOnlyWorker(model=model, world=world, trace=trace),
+        gate=InterventionGate(
+            run_id="run",
+            schedule=FixedAssignment(Assignment.SUPPRESS),
+            trace=trace,
+        ),
+        trace=trace,
+        delegation_enabled=False,
+    )
+
+    result = loop.run(world.task)
+
+    assert result.answer == "44"
+    assert "delegate" not in model.messages_seen[0][0]["content"]
+    assert [
+        tool["function"]["name"] for tool in model.tools_seen[0]
+    ] == ["lookup", "final_answer"]

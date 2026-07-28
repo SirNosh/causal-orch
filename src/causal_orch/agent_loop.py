@@ -55,7 +55,9 @@ class AgentLoop:
         gate: InterventionGate,
         trace: Trace,
         max_steps: int = 20,
+        max_output_tokens: int = 8_192,
         model_time_seconds: float = 5.0,
+        delegation_enabled: bool = True,
         forced_delegation_objective: str | None = None,
     ) -> None:
         self.model = model
@@ -64,7 +66,9 @@ class AgentLoop:
         self.gate = gate
         self.trace = trace
         self.max_steps = max_steps
+        self.max_output_tokens = max_output_tokens
         self.model_time_seconds = model_time_seconds
+        self.delegation_enabled = delegation_enabled
         self.forced_delegation_objective = forced_delegation_objective
 
     def run(self, task: str) -> AgentResult:
@@ -74,16 +78,23 @@ class AgentLoop:
             for item in ordinary_tools
             if item.get("type") == "function"
         }
-        tools = [*ordinary_tools, DELEGATE_TOOL, FINAL_TOOL]
+        tools = [
+            *ordinary_tools,
+            *([DELEGATE_TOOL] if self.delegation_enabled else []),
+            FINAL_TOOL,
+        ]
+        system_prompt = (
+            "Solve the task using exactly one provided function per step. "
+            "Use final_answer when done."
+        )
+        if self.delegation_enabled:
+            system_prompt = (
+                "Solve the task using exactly one provided function per step. "
+                "Use delegate only for a focused read-only research objective. "
+                "Use final_answer when done."
+            )
         messages: list[Mapping[str, Any]] = [
-            {
-                "role": "system",
-                "content": (
-                    "Solve the task using exactly one provided function per step. "
-                    "Use delegate only for a focused read-only research objective. "
-                    "Use final_answer when done."
-                ),
-            },
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": task},
         ]
         observations: list[str] = []
@@ -130,6 +141,10 @@ class AgentLoop:
 
         deliver_notifications()
         if self.forced_delegation_objective is not None:
+            if not self.delegation_enabled:
+                raise ValueError(
+                    "forced delegation requires delegation to be enabled"
+                )
             call_id = f"{self.trace.run_id}:forced-delegation"
             arguments = {"objective": self.forced_delegation_objective}
             action = decode_action("delegate", arguments, ordinary_names)
@@ -176,11 +191,16 @@ class AgentLoop:
                 actor="orchestrator",
                 model_call_id=model_call_id,
                 step=step,
+                max_tokens=self.max_output_tokens,
                 fixed_model_time_seconds=self.model_time_seconds,
             )
             self.world.pause_time()
             try:
-                turn = self.model.complete(messages, tools)
+                turn = self.model.complete(
+                    messages,
+                    tools,
+                    max_tokens=self.max_output_tokens,
+                )
             except Exception as exc:
                 self.trace.emit(
                     "model_call_failed",

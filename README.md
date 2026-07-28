@@ -47,9 +47,16 @@ Then pass one or more local Gaia2 scenario JSON files:
 
 ```powershell
 uv run python scripts/smoke.py --scenario C:\path\scenario.json
+uv run python scripts/direct_baseline.py --scenario C:\path\scenario.json
 uv run python scripts/proposal_pilot.py --scenario C:\path\scenario.json
 uv run python scripts/randomized_pilot.py --scenario C:\path\scenario.json
 ```
+
+`direct_baseline.py` removes the delegation function and delegation language
+entirely, leaving ordinary Gaia2 tools plus `final_answer`.
+Orchestrator calls have a fixed 8,192-token output ceiling. Use
+`--timeout-seconds` to account for local prompt processing and generation
+without changing simulated model time.
 
 Use a stable batch name when runs may be retried. Attempt IDs are inferred from
 existing traces, or can be supplied explicitly:

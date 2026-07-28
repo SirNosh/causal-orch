@@ -55,11 +55,15 @@ class OpenAICompatibleClient:
         base_url: str,
         api_key: str,
         model: str,
+        provider: str | None = None,
+        send_parallel_tool_calls: bool = True,
         timeout_seconds: float = 120.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self.provider = provider
+        self.send_parallel_tool_calls = send_parallel_tool_calls
         self.timeout_seconds = timeout_seconds
 
     def complete(
@@ -74,9 +78,16 @@ class OpenAICompatibleClient:
             "messages": list(messages),
             "tools": list(tools),
             "tool_choice": "required",
-            "parallel_tool_calls": False,
             "temperature": 0,
         }
+        if self.send_parallel_tool_calls:
+            payload["parallel_tool_calls"] = False
+        if self.provider is not None:
+            payload["provider"] = {
+                "only": [self.provider],
+                "allow_fallbacks": False,
+                "require_parameters": True,
+            }
         if max_tokens is not None:
             if max_tokens <= 0:
                 raise ValueError("max_tokens must be positive")
@@ -156,6 +167,7 @@ class ScriptedModelClient:
         self.call_count = 0
         self.max_tokens_seen: list[int | None] = []
         self.messages_seen: list[list[Mapping[str, Any]]] = []
+        self.tools_seen: list[list[Mapping[str, Any]]] = []
 
     def complete(
         self,
@@ -168,6 +180,7 @@ class ScriptedModelClient:
             raise AssertionError("scripted model exhausted")
         self.max_tokens_seen.append(max_tokens)
         self.messages_seen.append([dict(message) for message in messages])
+        self.tools_seen.append([dict(tool) for tool in tools])
         name, arguments = self._calls.pop(0)
         call_id = f"call-{self.call_count}"
         self.call_count += 1

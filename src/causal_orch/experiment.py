@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
+import time
 from typing import Any, Callable, Sequence
 from uuid import uuid4
 
@@ -40,7 +41,11 @@ class RunOutcome:
     input_tokens: int
     output_tokens: int
     model_latency_seconds: float
+    wall_latency_seconds: float
+    simulated_model_time_seconds: float
     tool_calls: int
+    structured_action_failures: int
+    task_completion_failure: bool
     error: str | None
 
 
@@ -49,6 +54,14 @@ def _sum_trace(trace: Trace, field: str) -> float:
         float(event["payload"].get(field) or 0)
         for event in trace.events
         if event["event"] == "model_response"
+    )
+
+
+def _sum_model_requests(trace: Trace, field: str) -> float:
+    return sum(
+        float(event["payload"].get(field) or 0)
+        for event in trace.events
+        if event["event"] == "model_request"
     )
 
 
@@ -62,9 +75,12 @@ def run_one(
     assignment_unit_id: str | None = None,
     trace_path: str | Path | None = None,
     forced_delegation_objective: str | None = None,
+    orchestrator_max_output_tokens: int = 8_192,
     model_time_seconds: float = 5.0,
+    delegation_enabled: bool = True,
     adapter_factory: Callable[[str | Path], Any] = Gaia2Adapter,
 ) -> RunOutcome:
+    wall_started = time.perf_counter()
     run_id = run_id or uuid4().hex
     assignment_unit_id = assignment_unit_id or run_id
     world = adapter_factory(scenario_path)
@@ -90,6 +106,7 @@ def run_one(
         model=model,
         world=world,
         trace=trace,
+        max_output_tokens=orchestrator_max_output_tokens,
         model_time_seconds=model_time_seconds,
     )
     loop = AgentLoop(
@@ -99,6 +116,7 @@ def run_one(
         gate=gate,
         trace=trace,
         model_time_seconds=model_time_seconds,
+        delegation_enabled=delegation_enabled,
         forced_delegation_objective=forced_delegation_objective,
     )
     result = None
@@ -150,7 +168,25 @@ def run_one(
         input_tokens=int(_sum_trace(trace, "input_tokens")),
         output_tokens=int(_sum_trace(trace, "output_tokens")),
         model_latency_seconds=_sum_trace(trace, "latency_seconds"),
+        wall_latency_seconds=time.perf_counter() - wall_started,
+        simulated_model_time_seconds=_sum_model_requests(
+            trace, "fixed_model_time_seconds"
+        ),
         tool_calls=trace.count("tool_result"),
+        structured_action_failures=sum(
+            1
+            for event in trace.events
+            if (
+                event["event"] == "model_call_failed"
+                and event["payload"].get("error_type")
+                == "StructuredActionError"
+            )
+            or (
+                event["event"] == "action_validation"
+                and event["payload"].get("status") == "invalid"
+            )
+        ),
+        task_completion_failure=result is None,
         error=error,
     )
 
@@ -201,6 +237,7 @@ def run_batch(
     batch_id: str | None = None,
     attempt_id: str | None = None,
     assignment_manifest_path: str | Path | None = None,
+    orchestrator_max_output_tokens: int = 8_192,
     model_time_seconds: float = 5.0,
 ) -> list[RunOutcome]:
     trace_root = Path(trace_dir)
@@ -220,7 +257,11 @@ def run_batch(
         else (
             Assignment.EXECUTE
             if mode == "smoke"
-            else Assignment.SUPPRESS if mode == "proposal" else None
+            else (
+                Assignment.SUPPRESS
+                if mode in ("direct", "proposal")
+                else None
+            )
         )
     )
     manifest_path = Path(
@@ -259,7 +300,11 @@ def run_batch(
                 assignment_unit_id=assignment_unit_id,
                 trace_path=trace_root / f"{run_id}.jsonl",
                 forced_delegation_objective=forced_delegation_objective,
+                orchestrator_max_output_tokens=(
+                    orchestrator_max_output_tokens
+                ),
                 model_time_seconds=model_time_seconds,
+                delegation_enabled=mode != "direct",
             )
         )
     return outcomes
@@ -275,12 +320,24 @@ def main(mode: str) -> int:
         ),
     )
     parser.add_argument("--model", default=os.environ.get("CAUSAL_ORCH_MODEL"))
+    parser.add_argument("--provider")
+    parser.add_argument(
+        "--omit-parallel-tool-calls",
+        action="store_true",
+        help="Omit the unsupported parallel_tool_calls transport hint.",
+    )
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
     parser.add_argument("--seed", default="paper-1-pilot")
     parser.add_argument("--batch-id")
     parser.add_argument("--attempt-id")
     parser.add_argument("--assignment-manifest")
     parser.add_argument("--model-time-seconds", type=float, default=5.0)
+    parser.add_argument(
+        "--orchestrator-max-output-tokens",
+        type=int,
+        default=8_192,
+    )
+    parser.add_argument("--timeout-seconds", type=float, default=120.0)
     parser.add_argument("--trace-dir", default="artifacts/minimal")
     parser.add_argument(
         "--assignment", choices=[item.value for item in Assignment]
@@ -289,6 +346,10 @@ def main(mode: str) -> int:
     args = parser.parse_args()
     if not args.model:
         parser.error("--model or CAUSAL_ORCH_MODEL is required")
+    if args.orchestrator_max_output_tokens <= 0:
+        parser.error("--orchestrator-max-output-tokens must be positive")
+    if args.timeout_seconds <= 0:
+        parser.error("--timeout-seconds must be positive")
     api_key = os.environ.get(args.api_key_env, "")
     if not api_key and not args.base_url.startswith(
         ("http://127.0.0.1", "http://localhost")
@@ -298,6 +359,9 @@ def main(mode: str) -> int:
         base_url=args.base_url,
         api_key=api_key,
         model=args.model,
+        provider=args.provider,
+        send_parallel_tool_calls=not args.omit_parallel_tool_calls,
+        timeout_seconds=args.timeout_seconds,
     )
     outcomes = run_batch(
         scenario_paths=args.scenario,
@@ -310,6 +374,9 @@ def main(mode: str) -> int:
         batch_id=args.batch_id,
         attempt_id=args.attempt_id,
         assignment_manifest_path=args.assignment_manifest,
+        orchestrator_max_output_tokens=(
+            args.orchestrator_max_output_tokens
+        ),
         model_time_seconds=args.model_time_seconds,
     )
     print(json.dumps([asdict(outcome) for outcome in outcomes], indent=2))
