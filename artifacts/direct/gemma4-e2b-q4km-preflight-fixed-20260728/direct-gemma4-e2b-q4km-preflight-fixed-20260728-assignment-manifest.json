@@ -1,0 +1,7 @@
+{
+  "assignments": {
+    "direct-gemma4-e2b-q4km-preflight-fixed-20260728:scenario_universe_28_2nr5po:repeat-1": "suppress"
+  },
+  "batch_id": "direct-gemma4-e2b-q4km-preflight-fixed-20260728",
+  "seed": "paper-1-pilot"
+}

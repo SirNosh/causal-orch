@@ -1,0 +1,26 @@
+{
+  "assignments": {
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_22_dwshqq:repeat-1": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_22_dwshqq:repeat-2": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_22_dwshqq:repeat-3": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_22_dwshqq:repeat-4": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_24_as82zr:repeat-1": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_24_as82zr:repeat-2": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_24_as82zr:repeat-3": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_24_as82zr:repeat-4": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_24_revn06:repeat-1": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_24_revn06:repeat-2": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_24_revn06:repeat-3": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_25_vetd7u:repeat-1": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_25_vetd7u:repeat-2": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_25_vetd7u:repeat-3": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_26_n5mmwn:repeat-1": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_26_n5mmwn:repeat-2": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_26_n5mmwn:repeat-3": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_28_2nr5po:repeat-1": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_28_2nr5po:repeat-2": "suppress",
+    "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728:scenario_universe_28_2nr5po:repeat-3": "suppress"
+  },
+  "batch_id": "direct-gemma4-e2b-q4km-pilot-20-fixed-20260728",
+  "seed": "paper-1-pilot"
+}
